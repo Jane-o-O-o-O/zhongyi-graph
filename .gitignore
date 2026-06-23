@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.env.local
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+node_modules/
+dist/
+build/
+.superpowers/
+neo4j/data/
+neo4j/logs/
+ragflow/data/
