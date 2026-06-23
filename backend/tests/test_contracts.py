@@ -93,3 +93,9 @@ def test_query_request_trims_question():
 def test_query_request_rejects_blank_question_after_trim():
     with pytest.raises(ValidationError):
         QueryRequest(question="   ")
+
+
+@pytest.mark.parametrize("raw_question", [None, 123, [], {}])
+def test_query_request_rejects_non_string_question(raw_question):
+    with pytest.raises(ValidationError):
+        QueryRequest(question=raw_question)

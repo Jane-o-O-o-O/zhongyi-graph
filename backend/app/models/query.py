@@ -9,6 +9,8 @@ class QueryRequest(BaseModel):
     @field_validator("question", mode="before")
     @classmethod
     def trim_question(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("question must be a string")
         question = value.strip()
         if not question:
             raise ValueError("question must not be blank")
