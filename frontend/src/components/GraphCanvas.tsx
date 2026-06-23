@@ -1,6 +1,9 @@
+import { Graph } from '@antv/g6';
 import { Network } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { GraphEdge, GraphNode } from '../api/types';
 import { colors } from '../theme/tokens';
+import { buildG6GraphData, legendItems, truncate } from './graphData';
 
 type GraphCanvasProps = {
   nodes: GraphNode[];
@@ -8,93 +11,128 @@ type GraphCanvasProps = {
   highlightedPath?: string[];
 };
 
-type LayoutNode = GraphNode & {
-  x: number;
-  y: number;
-  meta: NodeLabelMeta;
-};
-
-type NodeLabelMeta = {
-  display: string;
-  color: string;
-};
-
-const fallbackMeta: NodeLabelMeta = {
-  display: '实体',
-  color: colors.mutedInk,
-};
-
-const nodeLabelMeta = new Map<string, NodeLabelMeta>([
-  ['Symptom', { display: '症状', color: colors.cinnabar }],
-  ['症状', { display: '症状', color: colors.cinnabar }],
-  ['Syndrome', { display: '证候', color: colors.herb }],
-  ['证候', { display: '证候', color: colors.herb }],
-  ['Treatment', { display: '治法', color: colors.teal }],
-  ['治法', { display: '治法', color: colors.teal }],
-  ['Formula', { display: '方药', color: colors.gold }],
-  ['Prescription', { display: '方药', color: colors.gold }],
-  ['方剂', { display: '方药', color: colors.gold }],
-  ['方药', { display: '方药', color: colors.gold }],
-  ['Herb', { display: '中药', color: colors.herb }],
-  ['中药', { display: '中药', color: colors.herb }],
-  ['Indication', { display: '主治', color: colors.blueInk }],
-  ['适应证', { display: '主治', color: colors.blueInk }],
-  ['TextSource', { display: '典籍', color: colors.blueInk }],
-  ['典籍', { display: '典籍', color: colors.blueInk }],
-]);
-
-const legendItems = [
-  nodeLabelMeta.get('Symptom')!,
-  nodeLabelMeta.get('Syndrome')!,
-  nodeLabelMeta.get('Treatment')!,
-  nodeLabelMeta.get('Formula')!,
-  nodeLabelMeta.get('Herb')!,
-  nodeLabelMeta.get('TextSource')!,
-];
-
-const graphWidth = 1320;
-const graphHeight = 650;
-
-function truncate(label: string, maxLength = 9) {
-  return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
-}
-
-function getNodeMeta(label: string): NodeLabelMeta {
-  return nodeLabelMeta.get(label) ?? fallbackMeta;
-}
-
-function layoutNodes(nodes: GraphNode[]): LayoutNode[] {
-  if (nodes.length === 0) {
-    return [];
-  }
-
-  const [center, ...rest] = nodes;
-  const centerNode: LayoutNode = {
-    ...center,
-    x: graphWidth / 2,
-    y: graphHeight / 2,
-    meta: getNodeMeta(center.label),
-  };
-
-  const radiusX = 470;
-  const radiusY = 245;
-  const laidOut = rest.map((node, index) => {
-    const angle = (-Math.PI / 2) + (index / Math.max(rest.length, 1)) * Math.PI * 2;
-    return {
-      ...node,
-      x: graphWidth / 2 + Math.cos(angle) * radiusX,
-      y: graphHeight / 2 + Math.sin(angle) * radiusY,
-      meta: getNodeMeta(node.label),
-    };
-  });
-
-  return [centerNode, ...laidOut];
+function getDatumString(data: Record<string, unknown> | undefined, key: string, fallback = '') {
+  const value = data?.[key];
+  return typeof value === 'string' ? value : fallback;
 }
 
 export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasProps) {
-  const layout = layoutNodes(nodes);
-  const nodeById = new Map(layout.map((node) => [node.id, node]));
-  const highlighted = new Set(highlightedPath);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const graphRef = useRef<Graph | null>(null);
+  const graphData = useMemo(
+    () => buildG6GraphData(nodes, edges, highlightedPath),
+    [nodes, edges, highlightedPath],
+  );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    const graph = new Graph({
+      container,
+      autoResize: true,
+      autoFit: 'view',
+      padding: 48,
+      data: graphData,
+      animation: {
+        duration: 420,
+        easing: 'ease-cubic',
+      },
+      layout: {
+        type: 'concentric',
+        preventOverlap: true,
+        nodeSize: 96,
+        minNodeSpacing: 72,
+      },
+      node: {
+        type: 'circle',
+        style: (datum) => {
+          const name = getDatumString(datum.data, 'name', String(datum.id));
+          const displayLabel = getDatumString(datum.data, 'displayLabel', '实体');
+          const color = getDatumString(datum.data, 'color', colors.mutedInk);
+          return {
+            size: datum.states?.includes('highlighted') ? 92 : 78,
+            fill: color,
+            fillOpacity: datum.states?.includes('highlighted') ? 0.96 : 0.88,
+            stroke: '#fffaf0',
+            lineWidth: datum.states?.includes('highlighted') ? 5 : 3,
+            label: true,
+            labelText: `${truncate(name, 8)}\n${displayLabel}`,
+            labelFill: '#ffffff',
+            labelFontSize: 13,
+            labelFontWeight: 750,
+            labelPlacement: 'center',
+            labelTextAlign: 'center',
+            labelTextBaseline: 'middle',
+            halo: datum.states?.includes('highlighted'),
+            haloStroke: color,
+            haloStrokeOpacity: 0.22,
+            haloLineWidth: 14,
+            shadowColor: 'rgba(84, 64, 35, 0.22)',
+            shadowBlur: 18,
+          };
+        },
+        state: {
+          selected: {
+            lineWidth: 6,
+            stroke: colors.cinnabar,
+          },
+          active: {
+            halo: true,
+            haloStroke: colors.gold,
+            haloLineWidth: 16,
+          },
+        },
+      },
+      edge: {
+        type: 'line',
+        style: (datum) => {
+          const isHighlighted = datum.states?.includes('highlighted');
+          return {
+            stroke: isHighlighted ? colors.cinnabar : 'rgba(108, 103, 89, 0.42)',
+            lineWidth: isHighlighted ? 3.2 : 1.8,
+            endArrow: true,
+            label: true,
+            labelText: truncate(getDatumString(datum.data, 'display', ''), 8),
+            labelFill: colors.mutedInk,
+            labelFontSize: 11,
+            labelBackground: true,
+            labelBackgroundFill: '#fffdf7',
+            labelBackgroundFillOpacity: 0.9,
+            labelBackgroundRadius: 4,
+            labelPadding: [2, 4],
+          };
+        },
+        state: {
+          selected: {
+            stroke: colors.cinnabar,
+            lineWidth: 4,
+          },
+          active: {
+            stroke: colors.gold,
+            lineWidth: 3,
+          },
+        },
+      },
+      behaviors: [
+        'drag-canvas',
+        'zoom-canvas',
+        'drag-element',
+        'hover-activate',
+        'click-select',
+      ],
+    });
+
+    graphRef.current = graph;
+    void graph.render();
+
+    return () => {
+      graph.destroy();
+      graphRef.current = null;
+    };
+  }, [graphData]);
 
   return (
     <section className="panel graph-panel" aria-label="知识图谱">
@@ -112,83 +150,7 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
           ))}
         </div>
       </div>
-      <div className="graph-stage">
-        <svg className="graph-svg" viewBox={`0 0 ${graphWidth} ${graphHeight}`} role="img" aria-label="中医知识图谱关系画布">
-          <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L9,3 z" fill={colors.mutedInk} opacity="0.65" />
-            </marker>
-            <marker id="arrowHot" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L9,3 z" fill={colors.cinnabar} />
-            </marker>
-          </defs>
-
-          {edges.map((edge) => {
-            const source = nodeById.get(edge.source);
-            const target = nodeById.get(edge.target);
-            if (!source || !target) {
-              return null;
-            }
-            const isHighlighted = highlighted.has(edge.source) && highlighted.has(edge.target);
-            const midX = (source.x + target.x) / 2;
-            const midY = (source.y + target.y) / 2;
-
-            return (
-              <g key={edge.id}>
-                <line
-                  className={`graph-edge ${isHighlighted ? 'is-highlighted' : ''}`}
-                  x1={source.x}
-                  y1={source.y}
-                  x2={target.x}
-                  y2={target.y}
-                  markerEnd={`url(#${isHighlighted ? 'arrowHot' : 'arrow'})`}
-                />
-                <text className="edge-label" x={midX} y={midY - 8} textAnchor="middle">
-                  {truncate(edge.display || edge.relation, 8)}
-                </text>
-              </g>
-            );
-          })}
-
-          {layout.map((node, index) => {
-            const isCenter = index === 0;
-            const isHighlighted = highlighted.has(node.id);
-            return (
-              <g className={`graph-node ${isHighlighted ? 'is-highlighted' : ''}`} key={node.id}>
-                {isCenter ? (
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r="58"
-                    fill={node.meta.color}
-                    fillOpacity="0.94"
-                    stroke="#fffaf0"
-                    strokeWidth="3"
-                  />
-                ) : (
-                  <rect
-                    x={node.x - 62}
-                    y={node.y - 34}
-                    width="124"
-                    height="68"
-                    rx="8"
-                    fill={node.meta.color}
-                    fillOpacity="0.92"
-                    stroke="#fffaf0"
-                    strokeWidth="3"
-                  />
-                )}
-                <text className="node-label" x={node.x} y={node.y - 3}>
-                  {truncate(node.name || node.label, isCenter ? 8 : 7)}
-                </text>
-                <text className="node-desc" x={node.x} y={node.y + 17}>
-                  {node.meta.display}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
+      <div className="graph-stage graph-stage-g6" ref={containerRef} />
     </section>
   );
 }

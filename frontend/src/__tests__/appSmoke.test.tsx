@@ -5,6 +5,13 @@ import App from '../App';
 import { submitQuestion } from '../api/client';
 import type { QueryResult } from '../api/types';
 
+vi.mock('@antv/g6', () => ({
+  Graph: vi.fn().mockImplementation(() => ({
+    destroy: vi.fn(),
+    render: vi.fn(() => Promise.resolve()),
+  })),
+}));
+
 vi.mock('../api/client', () => ({
   submitQuestion: vi.fn(),
 }));
@@ -85,7 +92,7 @@ describe('App', () => {
 
     expect(await screen.findByText('黄连阿胶汤路径已收束到方药与药味节点，可继续查看清热滋阴证据。')).toBeInTheDocument();
     expect(screen.getAllByText('黄连阿胶汤').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('中药').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('中药')).toBeInTheDocument();
     expect(screen.queryByText('Formula')).not.toBeInTheDocument();
     expect(screen.queryByText('Herb')).not.toBeInTheDocument();
   });
