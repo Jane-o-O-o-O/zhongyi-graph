@@ -52,6 +52,9 @@ const legendItems = [
   nodeLabelMeta.get('TextSource')!,
 ];
 
+const graphWidth = 1320;
+const graphHeight = 650;
+
 function truncate(label: string, maxLength = 9) {
   return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
 }
@@ -68,19 +71,19 @@ function layoutNodes(nodes: GraphNode[]): LayoutNode[] {
   const [center, ...rest] = nodes;
   const centerNode: LayoutNode = {
     ...center,
-    x: 500,
-    y: 295,
+    x: graphWidth / 2,
+    y: graphHeight / 2,
     meta: getNodeMeta(center.label),
   };
 
-  const radiusX = 320;
-  const radiusY = 210;
+  const radiusX = 470;
+  const radiusY = 245;
   const laidOut = rest.map((node, index) => {
     const angle = (-Math.PI / 2) + (index / Math.max(rest.length, 1)) * Math.PI * 2;
     return {
       ...node,
-      x: 500 + Math.cos(angle) * radiusX,
-      y: 295 + Math.sin(angle) * radiusY,
+      x: graphWidth / 2 + Math.cos(angle) * radiusX,
+      y: graphHeight / 2 + Math.sin(angle) * radiusY,
       meta: getNodeMeta(node.label),
     };
   });
@@ -110,7 +113,7 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
         </div>
       </div>
       <div className="graph-stage">
-        <svg className="graph-svg" viewBox="0 0 1000 590" role="img" aria-label="中医知识图谱关系画布">
+        <svg className="graph-svg" viewBox={`0 0 ${graphWidth} ${graphHeight}`} role="img" aria-label="中医知识图谱关系画布">
           <defs>
             <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
               <path d="M0,0 L0,6 L9,3 z" fill={colors.mutedInk} opacity="0.65" />

@@ -5,10 +5,8 @@ import { submitQuestion } from './api/client';
 import type { QueryResult } from './api/types';
 import { AnswerPanel } from './components/AnswerPanel';
 import { AssetOverview } from './components/AssetOverview';
-import { EvidencePanel } from './components/EvidencePanel';
 import { GraphCanvas } from './components/GraphCanvas';
 import { QuestionInput } from './components/QuestionInput';
-import { SourceStatus } from './components/SourceStatus';
 import { colors } from './theme/tokens';
 import './theme/app.css';
 
@@ -244,11 +242,6 @@ export default function App() {
             edges={result.graphEdges}
             highlightedPath={result.highlightedPath}
           />
-
-          <aside className="evidence-column">
-            <EvidencePanel evidence={result.evidence} />
-            <SourceStatus />
-          </aside>
         </section>
       </main>
     </ConfigProvider>

@@ -107,12 +107,11 @@ textarea {
   flex: 1;
   min-height: 650px;
   display: grid;
-  grid-template-columns: 296px minmax(560px, 1fr) 326px;
+  grid-template-columns: 318px minmax(760px, 1fr);
   gap: 14px;
 }
 
-.side-column,
-.evidence-column {
+.side-column {
   min-height: 650px;
   display: flex;
   flex-direction: column;
