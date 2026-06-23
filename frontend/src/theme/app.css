@@ -286,8 +286,9 @@ textarea {
   flex: 1;
   min-height: 568px;
   background:
-    linear-gradient(rgba(184, 137, 59, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(184, 137, 59, 0.08) 1px, transparent 1px),
+    radial-gradient(circle at 50% 48%, rgba(255, 250, 240, 0.94), rgba(255, 253, 247, 0.98) 52%, #fffdf7 100%),
+    linear-gradient(rgba(184, 137, 59, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(184, 137, 59, 0.045) 1px, transparent 1px),
     #fffdf7;
   background-size: 28px 28px;
 }

@@ -43,8 +43,8 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
       layout: {
         type: 'concentric',
         preventOverlap: true,
-        nodeSize: 96,
-        minNodeSpacing: 72,
+        nodeSize: 74,
+        minNodeSpacing: 108,
       },
       node: {
         type: 'circle',
@@ -52,37 +52,43 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
           const name = getDatumString(datum.data, 'name', String(datum.id));
           const displayLabel = getDatumString(datum.data, 'displayLabel', '实体');
           const color = getDatumString(datum.data, 'color', colors.mutedInk);
+          const highlighted = datum.states?.includes('highlighted');
           return {
-            size: datum.states?.includes('highlighted') ? 92 : 78,
+            size: highlighted ? 66 : 54,
             fill: color,
-            fillOpacity: datum.states?.includes('highlighted') ? 0.96 : 0.88,
+            fillOpacity: highlighted ? 0.95 : 0.82,
             stroke: '#fffaf0',
-            lineWidth: datum.states?.includes('highlighted') ? 5 : 3,
+            lineWidth: highlighted ? 3.2 : 2,
             label: true,
-            labelText: `${truncate(name, 8)}\n${displayLabel}`,
-            labelFill: '#ffffff',
-            labelFontSize: 13,
-            labelFontWeight: 750,
-            labelPlacement: 'center',
+            labelText: `${truncate(name, 8)}  ${displayLabel}`,
+            labelFill: colors.ink,
+            labelFontSize: 12,
+            labelFontWeight: highlighted ? 750 : 650,
+            labelPlacement: 'bottom',
+            labelOffsetY: 8,
             labelTextAlign: 'center',
-            labelTextBaseline: 'middle',
-            halo: datum.states?.includes('highlighted'),
+            labelTextBaseline: 'top',
+            labelBackground: true,
+            labelBackgroundFill: 'rgba(255, 253, 247, 0.86)',
+            labelBackgroundRadius: 5,
+            labelPadding: [2, 5],
+            halo: highlighted,
             haloStroke: color,
-            haloStrokeOpacity: 0.22,
-            haloLineWidth: 14,
-            shadowColor: 'rgba(84, 64, 35, 0.22)',
-            shadowBlur: 18,
+            haloStrokeOpacity: 0.16,
+            haloLineWidth: 18,
+            shadowColor: 'rgba(84, 64, 35, 0.16)',
+            shadowBlur: highlighted ? 18 : 10,
           };
         },
         state: {
           selected: {
-            lineWidth: 6,
+            lineWidth: 4,
             stroke: colors.cinnabar,
           },
           active: {
             halo: true,
             haloStroke: colors.gold,
-            haloLineWidth: 16,
+            haloLineWidth: 18,
           },
         },
       },
@@ -91,16 +97,18 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
         style: (datum) => {
           const isHighlighted = datum.states?.includes('highlighted');
           return {
-            stroke: isHighlighted ? colors.cinnabar : 'rgba(108, 103, 89, 0.42)',
-            lineWidth: isHighlighted ? 3.2 : 1.8,
+            stroke: isHighlighted ? colors.cinnabar : 'rgba(108, 103, 89, 0.28)',
+            lineWidth: isHighlighted ? 2.2 : 1.1,
+            opacity: isHighlighted ? 0.95 : 0.72,
             endArrow: true,
             label: true,
             labelText: truncate(getDatumString(datum.data, 'display', ''), 8),
-            labelFill: colors.mutedInk,
-            labelFontSize: 11,
+            labelFill: isHighlighted ? colors.cinnabar : colors.mutedInk,
+            labelFontSize: 10,
+            labelFontWeight: isHighlighted ? 700 : 500,
             labelBackground: true,
             labelBackgroundFill: '#fffdf7',
-            labelBackgroundFillOpacity: 0.9,
+            labelBackgroundFillOpacity: 0.78,
             labelBackgroundRadius: 4,
             labelPadding: [2, 4],
           };
@@ -108,11 +116,11 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
         state: {
           selected: {
             stroke: colors.cinnabar,
-            lineWidth: 4,
+            lineWidth: 2.6,
           },
           active: {
             stroke: colors.gold,
-            lineWidth: 3,
+            lineWidth: 2.4,
           },
         },
       },
