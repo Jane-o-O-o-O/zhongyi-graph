@@ -20,6 +20,25 @@ The platform is a Chinese medicine knowledge graph intelligent workbench. Its pr
 
 The system should feel confident and smooth in demo mode. The main answer area should not emphasize uncertainty. Evidence and source cards provide credibility without turning the presentation into a risk disclaimer.
 
+## System Boundaries
+
+The platform has two clearly separated product areas:
+
+1. **Main Presentation And Question-Answering System**
+   - Used by leaders and demo audiences.
+   - Provides the polished question-driven graph workbench.
+   - Reads from the published Neo4j graph and published document index.
+   - Never parses uploaded files during a live question.
+   - Optimized for smooth presentation, graph-first interaction, and confident answers.
+
+2. **Knowledge Management And Ingestion System**
+   - Used by administrators or knowledge maintainers when the knowledge base changes.
+   - Handles user-added documents, parsing, extraction, validation, and publishing.
+   - Produces canonical artifacts and publishes approved data into Neo4j and the retrieval index.
+   - Is an upstream service for knowledge-base updates, not the main demo experience.
+
+These two areas may share backend infrastructure in the first version, but their APIs, UI surfaces, data flows, and mental models must stay separate.
+
 ## Visual Direction
 
 The confirmed visual direction is a light classical Chinese medicine workbench:
@@ -125,7 +144,9 @@ These are not fixed templates. They are graph and retrieval paths that the syste
 
 ### Knowledge Ingestion Service
 
-The platform needs a stable upstream parsing and ingestion service, not one-off scripts. This service is responsible for turning both existing local materials and newly uploaded user documents into canonical graph and retrieval artifacts.
+The knowledge management area needs a stable upstream parsing and ingestion service, not one-off scripts. This service is responsible for turning both existing local materials and newly uploaded user documents into canonical graph and retrieval artifacts.
+
+This service must not be confused with the main question-answering flow. Live user questions should query only already-published graph and retrieval data. Document parsing and graph updates happen before publication, through the knowledge management workflow.
 
 The ingestion service should expose:
 
@@ -145,7 +166,7 @@ The ingestion flow is:
 6. Validate artifacts against the graph schema and quality rules.
 7. Publish approved entities, relations, evidence, and document chunks to downstream stores.
 
-For the first version, ingestion can run as a FastAPI-triggered background worker inside the same backend container. The design should allow moving it to a dedicated worker service later.
+For the first version, ingestion can run as a FastAPI-triggered background worker inside the same backend container, but it should live under a separate API namespace and code module. The design should allow moving it to a dedicated worker service later.
 
 ### Uploaded Document Parsing
 
@@ -318,6 +339,7 @@ Expected services:
 
 - `tcm-web`: React frontend
 - `tcm-api`: FastAPI backend
+- `tcm-ingestion`: optional dedicated ingestion worker in later versions
 - `tcm-neo4j`: Neo4j Community
 - `ragflow`: RAGFlow service
 - RAGFlow dependencies such as MySQL, Redis/Valkey, MinIO, and Elasticsearch or Infinity
