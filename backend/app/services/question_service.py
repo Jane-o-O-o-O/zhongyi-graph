@@ -17,7 +17,7 @@ class QuestionService:
 
     @classmethod
     def demo(cls) -> "QuestionService":
-        return cls(GraphService.demo(), EvidenceService.demo(), LlmClient())
+        return cls(GraphService.demo(), EvidenceService.demo(), LlmClient.demo())
 
     def answer(self, question: str) -> QueryResponse:
         terms = self._extract_terms(question)
