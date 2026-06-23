@@ -8,6 +8,7 @@ __pycache__/
 node_modules/
 dist/
 build/
+*.egg-info/
 .superpowers/
 neo4j/data/
 neo4j/logs/

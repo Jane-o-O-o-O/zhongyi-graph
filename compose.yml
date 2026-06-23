@@ -36,6 +36,8 @@ services:
     container_name: tcm-web
     working_dir: /app/frontend
     command: sh -c "npm install && npm run dev"
+    environment:
+      VITE_API_PROXY_TARGET: http://tcm-api:8000
     ports:
       - "3000:3000"
     volumes:
