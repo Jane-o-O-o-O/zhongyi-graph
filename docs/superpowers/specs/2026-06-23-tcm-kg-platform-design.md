@@ -120,6 +120,68 @@ These are not fixed templates. They are graph and retrieval paths that the syste
 - `ExternalSourceService`: checks authoritative whitelisted external sources when enabled.
 - `AnswerSynthesisService`: calls the model API to generate the final answer from graph and evidence context.
 - `GraphImportService`: imports cleaned graph data into Neo4j.
+- `IngestionService`: registers uploaded/local sources and coordinates parsing, normalization, extraction, validation, and publishing.
+- `DocumentParsingService`: extracts text, tables, page locations, and metadata from uploaded PDF, Word, Markdown, text, CSV, and JSON files.
+
+### Knowledge Ingestion Service
+
+The platform needs a stable upstream parsing and ingestion service, not one-off scripts. This service is responsible for turning both existing local materials and newly uploaded user documents into canonical graph and retrieval artifacts.
+
+The ingestion service should expose:
+
+- `POST /api/ingestion/sources`: register or upload a source document.
+- `POST /api/ingestion/jobs`: start an ingestion job for one or more sources.
+- `GET /api/ingestion/jobs/{job_id}`: inspect job status, errors, and generated artifacts.
+- `GET /api/ingestion/sources`: list registered sources and versions.
+- `POST /api/ingestion/publish`: publish validated artifacts into Neo4j and the document index.
+
+The ingestion flow is:
+
+1. Register source file with path, type, checksum, owner, upload time, and version.
+2. Parse content into canonical text blocks and tables.
+3. Normalize content into `DocumentChunk` records with stable source locations.
+4. Extract candidate entities and relationships with rules and model assistance.
+5. Bind each extracted relation to one or more evidence chunks.
+6. Validate artifacts against the graph schema and quality rules.
+7. Publish approved entities, relations, evidence, and document chunks to downstream stores.
+
+For the first version, ingestion can run as a FastAPI-triggered background worker inside the same backend container. The design should allow moving it to a dedicated worker service later.
+
+### Uploaded Document Parsing
+
+User-added documents may be PDF, Word, Markdown, text, CSV, or JSON. The parser layer should hide file differences and produce the same canonical output shape.
+
+Supported first-version parsing strategy:
+
+- `.pdf`: use a PDF text parser for selectable text and preserve page numbers. If a PDF has no extractable text, mark it as requiring OCR rather than silently producing empty content.
+- `.docx`: parse paragraphs, headings, and tables with a Word document parser.
+- `.doc`: convert to `.docx` or PDF through headless LibreOffice, then parse the converted file.
+- `.md` / `.txt`: decode text, detect GB18030 when needed, preserve headings and paragraph boundaries.
+- `.csv` / `.json`: parse with structured readers and map fields through source-specific adapters.
+- Scanned PDFs and image-only documents: reserve an OCR path for a later version. The first version should record them as accepted sources with `requires_ocr` status if OCR is not configured.
+
+Canonical parsing output:
+
+```json
+{
+  "source_id": "source:uploaded:2026-06-23:abc123",
+  "chunk_id": "chunk:source:abc123:00042",
+  "content": "柴胡桂枝干姜汤，和解少阳，兼化痰饮。",
+  "content_type": "paragraph",
+  "location": {
+    "page": 12,
+    "heading": "方剂条目",
+    "paragraph": 4
+  },
+  "metadata": {
+    "filename": "方剂资料.pdf",
+    "mime_type": "application/pdf",
+    "checksum": "..."
+  }
+}
+```
+
+The graph extractor should only consume canonical chunks, never raw files directly. This keeps Neo4j import, RAGFlow indexing, and evidence display stable even as parser implementations evolve.
 
 ### API Shape
 
@@ -130,8 +192,24 @@ The first version should expose:
 - `POST /api/graph/expand`: expand a selected node.
 - `GET /api/assets/summary`: fetch data asset counts.
 - `GET /api/health`: check frontend-facing service status.
+- `POST /api/ingestion/sources`: register or upload a document source.
+- `POST /api/ingestion/jobs`: start parsing and extraction for selected sources.
+- `GET /api/ingestion/jobs/{job_id}`: inspect ingestion status and generated artifacts.
 
 ## Data Design
+
+### Canonical Ingestion Artifacts
+
+The ingestion service produces stable intermediate artifacts before anything is imported into Neo4j or indexed for retrieval:
+
+- `SourceManifest`: registered source identity, file path, checksum, type, version, and parser status.
+- `DocumentChunk`: normalized text or table chunk with location metadata.
+- `EntityCandidate`: extracted entity with type, name, aliases, source references, and confidence metadata.
+- `RelationCandidate`: extracted relationship with source entity, relation type, target entity, and evidence references.
+- `Evidence`: source snippet tied to an entity, relation, or answer.
+- `ImportBatch`: a versioned batch of validated entities and relations published into Neo4j and retrieval indexes.
+
+These artifacts should be stored under `data/artifacts/` in the first version and can later move to a database-backed registry.
 
 ### Local Sources
 
