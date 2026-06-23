@@ -6,10 +6,13 @@ from app.models.graph import EvidenceCard, GraphEdge, GraphNode
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
 
-    @field_validator("question")
+    @field_validator("question", mode="before")
     @classmethod
     def trim_question(cls, value: str) -> str:
-        return value.strip()
+        question = value.strip()
+        if not question:
+            raise ValueError("question must not be blank")
+        return question
 
 
 class QueryResponse(BaseModel):

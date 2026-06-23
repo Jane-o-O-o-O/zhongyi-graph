@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from app.core.config import Settings
+from app.models.graph import EvidenceCard, GraphEdge, GraphNode
+from app.models.query import QueryRequest, QueryResponse
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -44,10 +49,6 @@ def test_vite_react_plugin_is_dev_dependency():
     assert "@vitejs/plugin-react" in package["devDependencies"]
 
 
-from app.models.graph import EvidenceCard, GraphEdge, GraphNode
-from app.models.query import QueryRequest, QueryResponse
-
-
 def test_query_response_contains_answer_graph_and_evidence():
     response = QueryResponse(
         question="失眠可以从哪些证候分析？",
@@ -87,3 +88,8 @@ def test_query_response_contains_answer_graph_and_evidence():
 def test_query_request_trims_question():
     request = QueryRequest(question="  党参有什么功效？  ")
     assert request.question == "党参有什么功效？"
+
+
+def test_query_request_rejects_blank_question_after_trim():
+    with pytest.raises(ValidationError):
+        QueryRequest(question="   ")
