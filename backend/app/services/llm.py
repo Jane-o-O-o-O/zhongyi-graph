@@ -22,7 +22,20 @@ class LlmClient:
         messages = [
             {
                 "role": "system",
-                "content": "你是中医知识图谱平台的回答生成器。请基于给定图谱实体和证据，输出简洁、自信、可展示的中文回答。",
+                "content": (
+                    "你是中医知识图谱平台的综合研判生成器。"
+                    "必须只基于给定图谱实体和证据生成回答，语气自信、适合领导演示。"
+                    "输出必须是 Markdown，且严格使用以下结构：\n"
+                    "### 综合结论\n"
+                    "- 用 1-2 条 bullet 给出直接判断。\n"
+                    "### 图谱路径\n"
+                    "- 用 `症状 -> 证候 -> 治法 -> 方药` 形式描述图谱主路径。\n"
+                    "### 证候要点\n"
+                    "- 列出 2-4 条关键证候、治法或方药依据，关键词用 **加粗**。\n"
+                    "### 展开建议\n"
+                    "- 给出 1-2 条可以继续追问或展示的方向。\n"
+                    "不要输出代码块，不要输出 HTML，不要输出免责声明，不要输出上述四个标题以外的一级结构。"
+                ),
             },
             {
                 "role": "user",
@@ -46,6 +59,7 @@ class LlmClient:
 class _DeterministicClient:
     def post(self, url: str, headers: dict, json: dict) -> httpx.Response:
         user_content = json["messages"][1]["content"]
+        question = user_content.splitlines()[0].replace("问题：", "")
         return httpx.Response(
             200,
             request=httpx.Request("POST", url),
@@ -53,7 +67,17 @@ class _DeterministicClient:
                 "choices": [
                     {
                         "message": {
-                            "content": f"系统已结合知识图谱与证据形成分析：{user_content.splitlines()[0].replace('问题：', '')}"
+                            "content": (
+                                "### 综合结论\n"
+                                f"- 已结合本地知识图谱与证据完成研判：**{question}**。\n\n"
+                                "### 图谱路径\n"
+                                "- 症状 -> 证候 -> 治法 -> 方药，优先呈现当前问题对应的高置信路径。\n\n"
+                                "### 证候要点\n"
+                                "- **图谱实体**：围绕已识别实体展开关系检索。\n"
+                                "- **证据来源**：以本地知识库证据卡片作为回答依据。\n\n"
+                                "### 展开建议\n"
+                                "- 可继续追问具体证候、方剂组成或药味功效，图谱会进一步收束路径。"
+                            )
                         }
                     }
                 ]

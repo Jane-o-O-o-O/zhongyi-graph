@@ -155,11 +155,50 @@ textarea {
   min-height: 314px;
 }
 
-.answer-text {
+.answer-markdown {
   margin: 0;
   color: #343229;
   font-size: 14px;
-  line-height: 1.72;
+  line-height: 1.62;
+}
+
+.answer-markdown h3 {
+  margin: 12px 0 7px;
+  color: #25251f;
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 750;
+}
+
+.answer-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.answer-markdown p {
+  margin: 0 0 8px;
+}
+
+.answer-markdown ul,
+.answer-markdown ol {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
+.answer-markdown li {
+  margin: 4px 0;
+}
+
+.answer-markdown strong {
+  color: #9d3327;
+  font-weight: 750;
+}
+
+.answer-markdown code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(184, 137, 59, 0.12);
+  color: #367c73;
+  font-size: 12px;
 }
 
 .entity-list {

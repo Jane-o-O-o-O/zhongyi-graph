@@ -22,6 +22,7 @@ def test_question_service_keeps_deterministic_client_without_api_key():
 
     response = service.answer("失眠可以从哪些证候分析？")
 
+    assert response.answer.startswith("### 综合结论")
     assert "失眠" in response.answer
 
 

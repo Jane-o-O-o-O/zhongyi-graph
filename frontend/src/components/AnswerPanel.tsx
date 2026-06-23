@@ -1,4 +1,6 @@
 import { Brain } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type AnswerPanelProps = {
   answer: string;
@@ -17,7 +19,9 @@ export function AnswerPanel({ answer, entities, intent }: AnswerPanelProps) {
         <span className="intent-badge">{intent}</span>
       </div>
       <div className="panel-body">
-        <p className="answer-text">{answer}</p>
+        <div className="answer-markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+        </div>
         <div className="entity-list" aria-label="识别实体">
           {entities.map((entity) => (
             <span className="entity-chip" key={entity} title={entity}>
