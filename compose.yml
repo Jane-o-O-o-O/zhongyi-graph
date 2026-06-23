@@ -1,0 +1,46 @@
+services:
+  tcm-neo4j:
+    image: neo4j:5-community
+    container_name: tcm-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/tcm-kg-password
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+
+  tcm-api:
+    image: python:3.11-slim
+    container_name: tcm-api
+    working_dir: /app/backend
+    command: sh -c "pip install -e . && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - .env
+    environment:
+      NEO4J_URI: bolt://tcm-neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: tcm-kg-password
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      - tcm-neo4j
+
+  tcm-web:
+    image: node:20-slim
+    container_name: tcm-web
+    working_dir: /app/frontend
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+    depends_on:
+      - tcm-api
+
+volumes:
+  neo4j-data:
+  neo4j-logs:
