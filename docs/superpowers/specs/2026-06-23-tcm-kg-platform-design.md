@@ -378,6 +378,21 @@ The first implementation should produce a runnable demo skeleton with:
 
 The first version may use a small cleaned subset of local data, but the question flow must be real and must not rely on prewritten answer templates.
 
+### First-Version Priority
+
+The first implementation prioritizes the main presentation and question-answering system.
+
+Priority order:
+
+1. Build a polished graph-first frontend workbench.
+2. Build the FastAPI query contract and orchestration skeleton.
+3. Load a selected clean graph subset into Neo4j.
+4. Connect the configurable large-model API for live question understanding and answer synthesis.
+5. Return graph paths, answer summaries, and evidence cards through real APIs.
+6. Provide the knowledge ingestion service as a separated API and module skeleton, with source registration and artifact models, but defer the full uploaded-document parsing and publish workflow to a later phase.
+
+The ingestion system must be designed correctly in the first version, but it should not slow down delivery of the leadership-facing demo.
+
 ## Non-Goals For First Version
 
 - Full clinical decision support.
@@ -387,6 +402,7 @@ The first version may use a small cleaned subset of local data, but the question
 - Manual graph editor.
 - Complete medical safety review.
 - Fixed fake demos or prewritten answer templates.
+- Full PDF/Word upload-to-graph automation.
 
 ## Success Criteria
 
