@@ -116,7 +116,7 @@ Responsibilities:
 - Create: `frontend/src/test/setup.ts`
 - Create: `data/artifacts/.gitkeep`
 
-- [ ] **Step 1: Write the backend configuration test**
+- [x] **Step 1: Write the backend configuration test**
 
 Create `backend/tests/test_contracts.py` with:
 
@@ -139,7 +139,7 @@ def test_settings_reads_openai_compatible_llm_values():
     assert settings.neo4j_uri == "bolt://neo4j:7687"
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -149,7 +149,7 @@ cd backend && python -m pytest tests/test_contracts.py -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'app'` or missing `Settings`.
 
-- [ ] **Step 3: Add backend packaging and settings implementation**
+- [x] **Step 3: Add backend packaging and settings implementation**
 
 Create `backend/pyproject.toml`:
 
@@ -224,7 +224,7 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-- [ ] **Step 4: Add frontend runtime files**
+- [x] **Step 4: Add frontend runtime files**
 
 Create `frontend/package.json`:
 
@@ -347,7 +347,7 @@ Create `frontend/src/test/setup.ts`:
 import '@testing-library/jest-dom/vitest';
 ```
 
-- [ ] **Step 5: Add environment example and Makefile**
+- [x] **Step 5: Add environment example and Makefile**
 
 Create `.env.example`:
 
@@ -378,7 +378,7 @@ test: test-backend test-frontend
 
 Create `data/artifacts/.gitkeep` as an empty file.
 
-- [ ] **Step 6: Run backend foundation test**
+- [x] **Step 6: Run backend foundation test**
 
 Run:
 
@@ -388,7 +388,7 @@ cd backend && python -m pytest tests/test_contracts.py -q
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add .env.example Makefile backend frontend data/artifacts/.gitkeep
@@ -405,7 +405,7 @@ git commit -m "chore: scaffold project runtimes"
 - Create: `backend/app/models/query.py`
 - Create: `backend/app/models/__init__.py`
 
-- [ ] **Step 1: Add failing response contract tests**
+- [x] **Step 1: Add failing response contract tests**
 
 Append to `backend/tests/test_contracts.py`:
 
@@ -455,7 +455,7 @@ def test_query_request_trims_question():
     assert request.question == "党参有什么功效？"
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -465,7 +465,7 @@ cd backend && python -m pytest tests/test_contracts.py -q
 
 Expected: FAIL with missing `app.models.graph` or `app.models.query`.
 
-- [ ] **Step 3: Implement graph models**
+- [x] **Step 3: Implement graph models**
 
 Create `backend/app/models/__init__.py` as an empty file.
 
@@ -522,7 +522,7 @@ class EvidenceCard(BaseModel):
     location: str = ""
 ```
 
-- [ ] **Step 4: Implement query models**
+- [x] **Step 4: Implement query models**
 
 Create `backend/app/models/query.py`:
 
@@ -552,7 +552,7 @@ class QueryResponse(BaseModel):
     evidence: list[EvidenceCard] = Field(default_factory=list)
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -562,7 +562,7 @@ cd backend && python -m pytest tests/test_contracts.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/models backend/tests/test_contracts.py
@@ -582,7 +582,7 @@ git commit -m "feat: define query graph contracts"
 - Create: `backend/app/services/__init__.py`
 - Create: `backend/tests/test_question_service.py`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Create `backend/tests/test_question_service.py`:
 
@@ -616,7 +616,7 @@ def test_question_service_returns_formula_path_for_formula_question():
     assert any(edge.relation == "COMPOSED_OF" for edge in response.graph_edges)
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -626,7 +626,7 @@ cd backend && python -m pytest tests/test_question_service.py -q
 
 Expected: FAIL with missing `app.services.question_service`.
 
-- [ ] **Step 3: Add deterministic sample graph**
+- [x] **Step 3: Add deterministic sample graph**
 
 Create `backend/app/services/__init__.py` and `backend/app/data/__init__.py` as empty files.
 
@@ -744,7 +744,7 @@ SAMPLE_EVIDENCE = [
 ]
 ```
 
-- [ ] **Step 4: Add graph, evidence, LLM, and question services**
+- [x] **Step 4: Add graph, evidence, LLM, and question services**
 
 Create `backend/app/services/graph_service.py`:
 
@@ -872,7 +872,7 @@ class QuestionService:
         return "symptom_inquiry"
 ```
 
-- [ ] **Step 5: Run service tests**
+- [x] **Step 5: Run service tests**
 
 Run:
 
@@ -882,7 +882,7 @@ cd backend && python -m pytest tests/test_question_service.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/data backend/app/services backend/tests/test_question_service.py
@@ -902,7 +902,7 @@ git commit -m "feat: add deterministic question service"
 - Create: `backend/tests/test_api.py`
 - Create: `backend/tests/test_ingestion_models.py`
 
-- [ ] **Step 1: Write failing API tests**
+- [x] **Step 1: Write failing API tests**
 
 Create `backend/tests/test_api.py`:
 
@@ -954,7 +954,7 @@ def test_source_manifest_tracks_uploaded_document_status():
     assert manifest.status == "registered"
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -964,7 +964,7 @@ cd backend && python -m pytest tests/test_api.py tests/test_ingestion_models.py 
 
 Expected: FAIL with missing `app.main` or `app.models.ingestion`.
 
-- [ ] **Step 3: Implement ingestion models and service skeleton**
+- [x] **Step 3: Implement ingestion models and service skeleton**
 
 Create `backend/app/models/ingestion.py`:
 
@@ -1010,7 +1010,7 @@ class IngestionService:
         return job
 ```
 
-- [ ] **Step 4: Implement routes and app**
+- [x] **Step 4: Implement routes and app**
 
 Create `backend/app/api/__init__.py` as an empty file.
 
@@ -1078,7 +1078,7 @@ app.add_middleware(
 app.include_router(router)
 ```
 
-- [ ] **Step 5: Run API tests**
+- [x] **Step 5: Run API tests**
 
 Run:
 
@@ -1088,7 +1088,7 @@ cd backend && python -m pytest tests/test_api.py tests/test_ingestion_models.py 
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/api backend/app/main.py backend/app/models/ingestion.py backend/app/services/ingestion_service.py backend/tests/test_api.py backend/tests/test_ingestion_models.py
@@ -1103,7 +1103,7 @@ git commit -m "feat: expose query and ingestion skeleton api"
 - Modify: `backend/app/services/llm.py`
 - Create: `backend/tests/test_llm_client.py`
 
-- [ ] **Step 1: Write failing LLM client test**
+- [x] **Step 1: Write failing LLM client test**
 
 Create `backend/tests/test_llm_client.py`:
 
@@ -1152,7 +1152,7 @@ def test_llm_client_calls_openai_compatible_chat_completion():
     assert "心脾两虚" in captured["json"]
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -1162,7 +1162,7 @@ cd backend && python -m pytest tests/test_llm_client.py -q
 
 Expected: FAIL because the current `LlmClient` does not accept OpenAI-compatible configuration or an injected `http_client`.
 
-- [ ] **Step 3: Implement OpenAI-compatible LLM client**
+- [x] **Step 3: Implement OpenAI-compatible LLM client**
 
 Replace `backend/app/services/llm.py` with:
 
@@ -1229,7 +1229,7 @@ class _DeterministicClient:
         )
 ```
 
-- [ ] **Step 4: Update QuestionService demo construction**
+- [x] **Step 4: Update QuestionService demo construction**
 
 In `backend/app/services/question_service.py`, replace:
 
@@ -1243,7 +1243,7 @@ with:
 return cls(GraphService.demo(), EvidenceService.demo(), LlmClient.demo())
 ```
 
-- [ ] **Step 5: Run LLM and question service tests**
+- [x] **Step 5: Run LLM and question service tests**
 
 Run:
 
@@ -1253,7 +1253,7 @@ cd backend && python -m pytest tests/test_llm_client.py tests/test_question_serv
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/services/llm.py backend/app/services/question_service.py backend/tests/test_llm_client.py
@@ -1269,7 +1269,7 @@ git commit -m "feat: add openai compatible llm client"
 - Create: `data/seed/graph.json`
 - Create: `backend/tests/test_seed_artifacts.py`
 
-- [ ] **Step 1: Write failing artifact test**
+- [x] **Step 1: Write failing artifact test**
 
 Create `backend/tests/test_seed_artifacts.py`:
 
@@ -1289,7 +1289,7 @@ def test_seed_graph_artifact_has_nodes_edges_and_evidence():
     assert any(node["name"] == "柴胡桂枝干姜汤" for node in data["nodes"])
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -1299,7 +1299,7 @@ cd backend && python -m pytest tests/test_seed_artifacts.py -q
 
 Expected: FAIL because `data/seed/graph.json` does not exist.
 
-- [ ] **Step 3: Implement artifact builder**
+- [x] **Step 3: Implement artifact builder**
 
 Create `scripts/build_seed_artifacts.py`:
 
@@ -1380,7 +1380,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Generate artifact**
+- [x] **Step 4: Generate artifact**
 
 Run:
 
@@ -1390,7 +1390,7 @@ python scripts/build_seed_artifacts.py
 
 Expected output includes `wrote .../data/seed/graph.json`.
 
-- [ ] **Step 5: Run test**
+- [x] **Step 5: Run test**
 
 Run:
 
@@ -1400,7 +1400,7 @@ cd backend && python -m pytest tests/test_seed_artifacts.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/build_seed_artifacts.py data/seed/graph.json backend/tests/test_seed_artifacts.py
@@ -1416,7 +1416,7 @@ git commit -m "feat: add seed graph artifact"
 - Create: `compose.yml`
 - Create: `backend/tests/test_import_script.py`
 
-- [ ] **Step 1: Write failing import statement test**
+- [x] **Step 1: Write failing import statement test**
 
 Create `backend/tests/test_import_script.py`:
 
@@ -1446,7 +1446,7 @@ def test_build_merge_statements_creates_node_and_edge_cypher():
     assert any("COMPOSED_OF" in statement for statement, _ in statements)
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -1456,7 +1456,7 @@ cd backend && python -m pytest tests/test_import_script.py -q
 
 Expected: FAIL with missing `scripts.import_seed_graph`.
 
-- [ ] **Step 3: Implement import script**
+- [x] **Step 3: Implement import script**
 
 Create `scripts/import_seed_graph.py`:
 
@@ -1512,7 +1512,7 @@ if __name__ == "__main__":
     import_graph()
 ```
 
-- [ ] **Step 4: Add Docker Compose for main environment**
+- [x] **Step 4: Add Docker Compose for main environment**
 
 Create `compose.yml`:
 
@@ -1565,7 +1565,7 @@ volumes:
   neo4j-logs:
 ```
 
-- [ ] **Step 5: Run import script test**
+- [x] **Step 5: Run import script test**
 
 Run:
 
@@ -1575,7 +1575,7 @@ cd backend && python -m pytest tests/test_import_script.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add compose.yml scripts/import_seed_graph.py backend/tests/test_import_script.py
@@ -1591,7 +1591,7 @@ git commit -m "feat: add neo4j seed import and compose"
 - Create: `frontend/src/api/client.ts`
 - Create: `frontend/src/__tests__/apiClient.test.ts`
 
-- [ ] **Step 1: Write failing API client test**
+- [x] **Step 1: Write failing API client test**
 
 Create `frontend/src/__tests__/apiClient.test.ts`:
 
@@ -1618,7 +1618,7 @@ describe('normalizeQueryResponse', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -1628,7 +1628,7 @@ cd frontend && npm test -- apiClient.test.ts
 
 Expected: FAIL with missing `../api/client`.
 
-- [ ] **Step 3: Implement frontend types**
+- [x] **Step 3: Implement frontend types**
 
 Create `frontend/src/api/types.ts`:
 
@@ -1682,7 +1682,7 @@ export type QueryResult = {
 };
 ```
 
-- [ ] **Step 4: Implement API client**
+- [x] **Step 4: Implement API client**
 
 Create `frontend/src/api/client.ts`:
 
@@ -1709,7 +1709,7 @@ export async function submitQuestion(question: string): Promise<QueryResult> {
 }
 ```
 
-- [ ] **Step 5: Run frontend API test**
+- [x] **Step 5: Run frontend API test**
 
 Run:
 
@@ -1719,7 +1719,7 @@ cd frontend && npm test -- apiClient.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/api frontend/src/__tests__/apiClient.test.ts
@@ -1743,7 +1743,7 @@ git commit -m "feat: add frontend api client contract"
 - Create: `frontend/src/theme/app.css`
 - Create: `frontend/src/__tests__/appSmoke.test.tsx`
 
-- [ ] **Step 1: Write failing smoke test**
+- [x] **Step 1: Write failing smoke test**
 
 Create `frontend/src/__tests__/appSmoke.test.tsx`:
 
@@ -1764,7 +1764,7 @@ describe('App', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -1774,7 +1774,7 @@ cd frontend && npm test -- appSmoke.test.tsx
 
 Expected: FAIL with missing `../App`.
 
-- [ ] **Step 3: Implement theme**
+- [x] **Step 3: Implement theme**
 
 Create `frontend/src/theme/tokens.ts`:
 
@@ -1862,7 +1862,7 @@ body {
 }
 ```
 
-- [ ] **Step 4: Implement components**
+- [x] **Step 4: Implement components**
 
 Create `frontend/src/components/QuestionInput.tsx`:
 
@@ -2007,7 +2007,7 @@ export function AssetOverview() {
 }
 ```
 
-- [ ] **Step 5: Implement App and main entry**
+- [x] **Step 5: Implement App and main entry**
 
 Create `frontend/src/App.tsx`:
 
@@ -2086,7 +2086,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 ```
 
-- [ ] **Step 6: Run frontend smoke test**
+- [x] **Step 6: Run frontend smoke test**
 
 Run:
 
@@ -2096,7 +2096,7 @@ cd frontend && npm test -- appSmoke.test.tsx
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src
@@ -2110,7 +2110,7 @@ git commit -m "feat: build graph-first frontend shell"
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Create README with run commands**
+- [x] **Step 1: Create README with run commands**
 
 Create `README.md`:
 
@@ -2145,7 +2145,7 @@ python scripts/import_seed_graph.py
 ```
 ```
 
-- [ ] **Step 2: Run backend full test suite**
+- [x] **Step 2: Run backend full test suite**
 
 Run:
 
@@ -2155,7 +2155,7 @@ make test-backend
 
 Expected: PASS.
 
-- [ ] **Step 3: Run frontend test suite**
+- [x] **Step 3: Run frontend test suite**
 
 Run:
 
@@ -2165,7 +2165,7 @@ cd frontend && npm install && npm test
 
 Expected: PASS.
 
-- [ ] **Step 4: Start Docker environment**
+- [x] **Step 4: Start Docker environment**
 
 Run:
 
@@ -2176,7 +2176,7 @@ docker compose up -d
 
 Expected: `tcm-neo4j`, `tcm-api`, and `tcm-web` containers running.
 
-- [ ] **Step 5: Verify API health**
+- [x] **Step 5: Verify API health**
 
 Run:
 
@@ -2186,7 +2186,7 @@ curl http://localhost:8000/api/health
 
 Expected JSON includes `"status":"ok"`.
 
-- [ ] **Step 6: Verify query endpoint**
+- [x] **Step 6: Verify query endpoint**
 
 Run:
 
@@ -2198,7 +2198,7 @@ curl -s http://localhost:8000/api/query \
 
 Expected JSON includes `graph_nodes`, `graph_edges`, and `evidence`.
 
-- [ ] **Step 7: Verify frontend manually**
+- [x] **Step 7: Verify frontend manually**
 
 Open:
 
@@ -2214,7 +2214,7 @@ Submit:
 
 Expected: graph canvas updates with multiple nodes, answer panel updates, evidence panel shows cards.
 
-- [ ] **Step 8: Commit README**
+- [x] **Step 8: Commit README**
 
 ```bash
 git add README.md

@@ -1,12 +1,18 @@
 from fastapi import APIRouter
 
+from app.core.config import get_settings
 from app.models.ingestion import IngestionJob, SourceManifest
 from app.models.query import QueryRequest, QueryResponse
 from app.services.ingestion_service import IngestionService
 from app.services.question_service import QuestionService
 
 router = APIRouter(prefix="/api")
-question_service = QuestionService.demo()
+settings = get_settings()
+question_service = QuestionService.from_settings(
+    llm_base_url=settings.llm_base_url,
+    llm_api_key=settings.llm_api_key,
+    llm_model=settings.llm_model,
+)
 ingestion_service = IngestionService()
 
 

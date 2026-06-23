@@ -19,6 +19,23 @@ class QuestionService:
     def demo(cls) -> "QuestionService":
         return cls(GraphService.demo(), EvidenceService.demo(), LlmClient.demo())
 
+    @classmethod
+    def from_settings(
+        cls,
+        llm_base_url: str,
+        llm_api_key: str,
+        llm_model: str,
+    ) -> "QuestionService":
+        if llm_api_key and llm_api_key != "replace-with-your-key":
+            llm_client = LlmClient(
+                base_url=llm_base_url,
+                api_key=llm_api_key,
+                model=llm_model,
+            )
+        else:
+            llm_client = LlmClient.demo()
+        return cls(GraphService.demo(), EvidenceService.demo(), llm_client)
+
     def answer(self, question: str) -> QueryResponse:
         terms = self._extract_terms(question)
         nodes, edges = self.graph_service.related_to_terms(terms)
