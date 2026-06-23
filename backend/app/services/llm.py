@@ -18,13 +18,20 @@ class LlmClient:
     def demo(cls) -> "LlmClient":
         return cls(http_client=_DeterministicClient())
 
-    def synthesize(self, question: str, entities: list[str], evidence: list[str]) -> str:
+    def synthesize(
+        self,
+        question: str,
+        entities: list[str],
+        evidence: list[str],
+        graph_paths: list[str] | None = None,
+    ) -> str:
         messages = [
             {
                 "role": "system",
                 "content": (
                     "你是中医知识图谱平台的综合研判生成器。"
                     "必须只基于给定图谱实体和证据生成回答，语气自信、适合领导演示。"
+                    "图谱路径优先于普通证据；如果普通证据与图谱路径侧重点不同，回答必须跟随图谱路径。"
                     "输出必须是 Markdown，且严格使用以下结构：\n"
                     "### 综合结论\n"
                     "- 用 1-2 条 bullet 给出直接判断。\n"
@@ -42,6 +49,7 @@ class LlmClient:
                 "content": (
                     f"问题：{question}\n"
                     f"图谱实体：{'、'.join(entities)}\n"
+                    f"图谱路径：{'；'.join(graph_paths or [])}\n"
                     f"证据：{'；'.join(evidence)}"
                 ),
             },

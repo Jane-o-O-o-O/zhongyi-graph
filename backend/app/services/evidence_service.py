@@ -18,3 +18,7 @@ class EvidenceService:
                 cards.append(self.evidence[evidence_id])
                 seen.add(evidence_id)
         return cards
+
+    def upsert_many(self, evidence: list[EvidenceCard]) -> None:
+        for item in evidence:
+            self.evidence[item.id] = item

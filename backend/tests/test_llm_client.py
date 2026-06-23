@@ -97,6 +97,44 @@ def test_llm_client_requires_markdown_answer_structure():
     assert "不要输出代码块" in system_prompt
 
 
+def test_llm_client_prioritizes_graph_paths_over_loose_evidence():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = request.read().decode("utf-8")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "### 综合结论\n- 已按图谱路径输出。"
+                        }
+                    }
+                ]
+            },
+        )
+
+    llm = LlmClient(
+        base_url="https://llm.example/v1",
+        api_key="secret",
+        model="demo-model",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    llm.synthesize(
+        question="头痛是因为什么导致的？",
+        entities=["头痛"],
+        evidence=["普通切片提到了痰浊。"],
+        graph_paths=["头痛 -> 肝阳上亢 -> 平肝潜阳"],
+    )
+
+    payload = json.loads(captured["json"])
+    assert "图谱路径优先于普通证据" in payload["messages"][0]["content"]
+    assert "头痛 -> 肝阳上亢 -> 平肝潜阳" in payload["messages"][1]["content"]
+    assert "普通切片提到了痰浊" in payload["messages"][1]["content"]
+
+
 def test_llm_client_raises_for_error_response():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": "upstream failed"})

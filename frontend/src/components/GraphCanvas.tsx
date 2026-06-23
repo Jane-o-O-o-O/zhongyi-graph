@@ -3,7 +3,14 @@ import { Network } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import type { GraphEdge, GraphNode } from '../api/types';
 import { colors } from '../theme/tokens';
-import { buildG6GraphData, legendItems, truncate } from './graphData';
+import { buildG6GraphData, legendItems } from './graphData';
+import {
+  edgeVisualStyle,
+  graphBehaviors,
+  graphLayoutConfig,
+  graphViewportConfig,
+  nodeVisualStyle,
+} from './graphVisualStyle';
 
 type GraphCanvasProps = {
   nodes: GraphNode[];
@@ -33,19 +40,16 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
     const graph = new Graph({
       container,
       autoResize: true,
-      autoFit: 'view',
-      padding: 48,
+      autoFit: graphViewportConfig.autoFit,
+      zoom: graphViewportConfig.zoom,
+      zoomRange: graphViewportConfig.zoomRange,
+      padding: graphViewportConfig.padding,
       data: graphData,
       animation: {
         duration: 420,
         easing: 'ease-cubic',
       },
-      layout: {
-        type: 'concentric',
-        preventOverlap: true,
-        nodeSize: 54,
-        minNodeSpacing: 108,
-      },
+      layout: graphLayoutConfig,
       node: {
         type: 'circle',
         style: (datum) => {
@@ -53,32 +57,13 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
           const displayLabel = getDatumString(datum.data, 'displayLabel', '实体');
           const color = getDatumString(datum.data, 'color', colors.mutedInk);
           const highlighted = datum.states?.includes('highlighted');
-          return {
-            size: 4,
-            fill: color,
-            fillOpacity: 0.95,
-            stroke: color,
-            lineWidth: 1,
-            label: true,
-            labelText: `${truncate(name, 8)}  ${displayLabel}`,
-            labelFill: colors.ink,
-            labelFontSize: 12,
-            labelFontWeight: highlighted ? 750 : 650,
-            labelPlacement: 'bottom',
-            labelOffsetY: 12,
-            labelTextAlign: 'center',
-            labelTextBaseline: 'top',
-            labelBackground: true,
-            labelBackgroundFill: 'rgba(255, 253, 247, 0.86)',
-            labelBackgroundRadius: 5,
-            labelPadding: [2, 5],
-            halo: highlighted,
-            haloStroke: color,
-            haloStrokeOpacity: 0.22,
-            haloLineWidth: 14,
-            shadowColor: highlighted ? 'rgba(84, 64, 35, 0.18)' : 'transparent',
-            shadowBlur: highlighted ? 12 : 0,
-          };
+          return nodeVisualStyle({
+            id: String(datum.id),
+            name,
+            displayLabel,
+            color,
+            highlighted: Boolean(highlighted),
+          });
         },
         state: {
           selected: {
@@ -101,22 +86,10 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
         type: 'line',
         style: (datum) => {
           const isHighlighted = datum.states?.includes('highlighted');
-          return {
-            stroke: isHighlighted ? colors.cinnabar : 'rgba(108, 103, 89, 0.28)',
-            lineWidth: isHighlighted ? 2.2 : 1.1,
-            opacity: isHighlighted ? 0.95 : 0.72,
-            endArrow: true,
-            label: true,
-            labelText: truncate(getDatumString(datum.data, 'display', ''), 8),
-            labelFill: isHighlighted ? colors.cinnabar : colors.mutedInk,
-            labelFontSize: 10,
-            labelFontWeight: isHighlighted ? 700 : 500,
-            labelBackground: true,
-            labelBackgroundFill: '#fffdf7',
-            labelBackgroundFillOpacity: 0.78,
-            labelBackgroundRadius: 4,
-            labelPadding: [2, 4],
-          };
+          return edgeVisualStyle({
+            display: getDatumString(datum.data, 'display', ''),
+            highlighted: Boolean(isHighlighted),
+          });
         },
         state: {
           selected: {
@@ -129,21 +102,30 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
           },
         },
       },
-      behaviors: [
-        'drag-canvas',
-        'zoom-canvas',
-        'drag-element',
-        'hover-activate',
-        'click-select',
-      ],
+      behaviors: graphBehaviors,
     });
 
     graphRef.current = graph;
-    void graph.render();
+    let destroyed = false;
+    const destroyGraph = () => {
+      if (destroyed) {
+        return;
+      }
+      destroyed = true;
+      graph.destroy();
+      if (graphRef.current === graph) {
+        graphRef.current = null;
+      }
+    };
+    const renderTask = graph.render();
+    void renderTask.then(() => {
+      if (!destroyed) {
+        void graph.fitCenter(false);
+      }
+    });
 
     return () => {
-      graph.destroy();
-      graphRef.current = null;
+      void renderTask.then(destroyGraph, destroyGraph);
     };
   }, [graphData]);
 

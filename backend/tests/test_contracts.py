@@ -17,14 +17,32 @@ def test_settings_reads_openai_compatible_llm_values():
         llm_base_url="https://llm.example/v1",
         llm_api_key="test-key",
         llm_model="demo-model",
+        embedding_model="Qwen/Qwen3-Embedding-8B",
+        rerank_model="Qwen/Qwen3-Reranker-8B",
+        ocr_model="deepseek-ai/DeepSeek-OCR",
+        qdrant_url="http://qdrant:6333",
+        qdrant_collection="tcm_knowledge",
         neo4j_uri="bolt://neo4j:7687",
         neo4j_user="neo4j",
         neo4j_password="password",
+        postgres_dsn="postgresql+psycopg://tcm:tcm@postgres:5432/tcm_kg",
+        minio_endpoint="minio:9000",
+        minio_access_key="minioadmin",
+        minio_secret_key="minioadmin",
+        minio_bucket="tcm-documents",
     )
 
     assert settings.llm_base_url == "https://llm.example/v1"
     assert settings.llm_model == "demo-model"
+    assert settings.embedding_model == "Qwen/Qwen3-Embedding-8B"
+    assert settings.rerank_model == "Qwen/Qwen3-Reranker-8B"
+    assert settings.ocr_model == "deepseek-ai/DeepSeek-OCR"
+    assert settings.qdrant_url == "http://qdrant:6333"
+    assert settings.qdrant_collection == "tcm_knowledge"
     assert settings.neo4j_uri == "bolt://neo4j:7687"
+    assert settings.postgres_dsn == "postgresql+psycopg://tcm:tcm@postgres:5432/tcm_kg"
+    assert settings.minio_endpoint == "minio:9000"
+    assert settings.minio_bucket == "tcm-documents"
 
 
 def test_settings_env_file_points_to_repo_root():

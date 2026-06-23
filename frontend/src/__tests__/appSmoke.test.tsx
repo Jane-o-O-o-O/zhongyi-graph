@@ -8,6 +8,7 @@ import type { QueryResult } from '../api/types';
 vi.mock('@antv/g6', () => ({
   Graph: vi.fn().mockImplementation(() => ({
     destroy: vi.fn(),
+    fitCenter: vi.fn(() => Promise.resolve()),
     render: vi.fn(() => Promise.resolve()),
   })),
 }));
@@ -74,6 +75,7 @@ describe('App', () => {
     expect(screen.getByText('中医知识图谱智能平台')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('请输入中医问题，例如：失眠可以从哪些证候分析？')).toBeInTheDocument();
     expect(screen.getByText('知识图谱')).toBeInTheDocument();
+    expect(screen.queryByText('数据资产')).not.toBeInTheDocument();
     expect(screen.queryByText('证据链')).not.toBeInTheDocument();
     expect(screen.queryByText('来源状态')).not.toBeInTheDocument();
   });

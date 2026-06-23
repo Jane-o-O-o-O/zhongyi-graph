@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import { submitQuestion } from './api/client';
 import type { QueryResult } from './api/types';
 import { AnswerPanel } from './components/AnswerPanel';
-import { AssetOverview } from './components/AssetOverview';
 import { GraphCanvas } from './components/GraphCanvas';
 import { QuestionInput } from './components/QuestionInput';
 import { colors } from './theme/tokens';
@@ -234,7 +233,6 @@ export default function App() {
         <section className="workbench-grid">
           <aside className="side-column">
             <AnswerPanel answer={result.answer} entities={result.entities} intent={result.intent} />
-            <AssetOverview />
           </aside>
 
           <GraphCanvas

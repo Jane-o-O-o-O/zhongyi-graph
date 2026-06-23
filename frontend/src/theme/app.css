@@ -25,11 +25,12 @@ textarea {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   padding: 18px 22px 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow: hidden;
 }
 
 .topbar {
@@ -105,14 +106,18 @@ textarea {
 
 .workbench-grid {
   flex: 1;
-  min-height: 650px;
+  height: calc(100vh - 128px);
+  min-height: 0;
+  max-height: calc(100vh - 128px);
   display: grid;
   grid-template-columns: 318px minmax(760px, 1fr);
   gap: 14px;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .side-column {
-  min-height: 650px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -151,7 +156,15 @@ textarea {
 
 .answer-panel {
   flex: 1;
-  min-height: 314px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.answer-panel .panel-body {
+  min-height: 0;
+  overflow: auto;
 }
 
 .answer-markdown {
@@ -220,16 +233,6 @@ textarea {
   white-space: nowrap;
 }
 
-.asset-overview {
-  min-height: 204px;
-}
-
-.asset-list {
-  display: grid;
-  gap: 10px;
-}
-
-.asset-row,
 .source-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -239,26 +242,22 @@ textarea {
   border-bottom: 1px solid rgba(225, 211, 187, 0.64);
 }
 
-.asset-row:last-child,
 .source-row:last-child {
   border-bottom: 0;
 }
 
-.asset-label,
 .source-label {
   color: #25251f;
   font-size: 13px;
   font-weight: 650;
 }
 
-.asset-meta,
 .source-meta {
   margin-top: 3px;
   color: #6c6759;
   font-size: 12px;
 }
 
-.asset-value,
 .source-state {
   color: #9d3327;
   font-size: 15px;
@@ -266,7 +265,7 @@ textarea {
 }
 
 .graph-panel {
-  min-height: 650px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -284,7 +283,7 @@ textarea {
 .graph-stage {
   position: relative;
   flex: 1;
-  min-height: 568px;
+  min-height: 0;
   background:
     radial-gradient(circle at 50% 48%, rgba(255, 250, 240, 0.94), rgba(255, 253, 247, 0.98) 52%, #fffdf7 100%),
     linear-gradient(rgba(184, 137, 59, 0.045) 1px, transparent 1px),
