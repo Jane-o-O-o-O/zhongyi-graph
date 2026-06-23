@@ -11,13 +11,53 @@ type GraphCanvasProps = {
 type LayoutNode = GraphNode & {
   x: number;
   y: number;
+  meta: NodeLabelMeta;
+};
+
+type NodeLabelMeta = {
+  display: string;
   color: string;
 };
 
-const palette = [colors.cinnabar, colors.herb, colors.teal, colors.gold, colors.blueInk];
+const fallbackMeta: NodeLabelMeta = {
+  display: '实体',
+  color: colors.mutedInk,
+};
+
+const nodeLabelMeta = new Map<string, NodeLabelMeta>([
+  ['Symptom', { display: '症状', color: colors.cinnabar }],
+  ['症状', { display: '症状', color: colors.cinnabar }],
+  ['Syndrome', { display: '证候', color: colors.herb }],
+  ['证候', { display: '证候', color: colors.herb }],
+  ['Treatment', { display: '治法', color: colors.teal }],
+  ['治法', { display: '治法', color: colors.teal }],
+  ['Formula', { display: '方药', color: colors.gold }],
+  ['Prescription', { display: '方药', color: colors.gold }],
+  ['方剂', { display: '方药', color: colors.gold }],
+  ['方药', { display: '方药', color: colors.gold }],
+  ['Herb', { display: '中药', color: colors.herb }],
+  ['中药', { display: '中药', color: colors.herb }],
+  ['Indication', { display: '主治', color: colors.blueInk }],
+  ['适应证', { display: '主治', color: colors.blueInk }],
+  ['TextSource', { display: '典籍', color: colors.blueInk }],
+  ['典籍', { display: '典籍', color: colors.blueInk }],
+]);
+
+const legendItems = [
+  nodeLabelMeta.get('Symptom')!,
+  nodeLabelMeta.get('Syndrome')!,
+  nodeLabelMeta.get('Treatment')!,
+  nodeLabelMeta.get('Formula')!,
+  nodeLabelMeta.get('Herb')!,
+  nodeLabelMeta.get('TextSource')!,
+];
 
 function truncate(label: string, maxLength = 9) {
   return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
+}
+
+function getNodeMeta(label: string): NodeLabelMeta {
+  return nodeLabelMeta.get(label) ?? fallbackMeta;
 }
 
 function layoutNodes(nodes: GraphNode[]): LayoutNode[] {
@@ -30,7 +70,7 @@ function layoutNodes(nodes: GraphNode[]): LayoutNode[] {
     ...center,
     x: 500,
     y: 295,
-    color: palette[0],
+    meta: getNodeMeta(center.label),
   };
 
   const radiusX = 320;
@@ -41,7 +81,7 @@ function layoutNodes(nodes: GraphNode[]): LayoutNode[] {
       ...node,
       x: 500 + Math.cos(angle) * radiusX,
       y: 295 + Math.sin(angle) * radiusY,
-      color: palette[(index + 1) % palette.length],
+      meta: getNodeMeta(node.label),
     };
   });
 
@@ -61,22 +101,12 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
           知识图谱
         </h2>
         <div className="legend-row" aria-label="图例">
-          <span className="legend-item">
-            <i className="legend-dot" style={{ background: colors.cinnabar }} />
-            关注实体
-          </span>
-          <span className="legend-item">
-            <i className="legend-dot" style={{ background: colors.herb }} />
-            证候
-          </span>
-          <span className="legend-item">
-            <i className="legend-dot" style={{ background: colors.teal }} />
-            治法
-          </span>
-          <span className="legend-item">
-            <i className="legend-dot" style={{ background: colors.gold }} />
-            方药
-          </span>
+          {legendItems.map((item) => (
+            <span className="legend-item" key={item.display}>
+              <i className="legend-dot" style={{ background: item.color }} />
+              {item.display}
+            </span>
+          ))}
         </div>
       </div>
       <div className="graph-stage">
@@ -127,7 +157,7 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
                     cx={node.x}
                     cy={node.y}
                     r="58"
-                    fill={node.color}
+                    fill={node.meta.color}
                     fillOpacity="0.94"
                     stroke="#fffaf0"
                     strokeWidth="3"
@@ -139,17 +169,17 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
                     width="124"
                     height="68"
                     rx="8"
-                    fill={node.color}
+                    fill={node.meta.color}
                     fillOpacity="0.92"
                     stroke="#fffaf0"
                     strokeWidth="3"
                   />
                 )}
-                <text className="node-label" x={node.x} y={node.y - 3} fill="#ffffff">
+                <text className="node-label" x={node.x} y={node.y - 3}>
                   {truncate(node.name || node.label, isCenter ? 8 : 7)}
                 </text>
-                <text className="node-desc" x={node.x} y={node.y + 17} fill="#fffaf0">
-                  {truncate(node.label, isCenter ? 8 : 7)}
+                <text className="node-desc" x={node.x} y={node.y + 17}>
+                  {node.meta.display}
                 </text>
               </g>
             );
