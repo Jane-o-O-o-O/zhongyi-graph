@@ -1,0 +1,390 @@
+:root {
+  color: #25251f;
+  background: #f7f2e8;
+  font-family:
+    Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 1180px;
+  min-height: 760px;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.92) 0%, rgba(247, 242, 232, 0.96) 58%),
+    #f7f2e8;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 18px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.topbar {
+  height: 78px;
+  display: grid;
+  grid-template-columns: 310px minmax(520px, 1fr) 244px;
+  gap: 18px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid #e1d3bb;
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: 0 10px 30px rgba(84, 64, 35, 0.08);
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #25251f;
+}
+
+.brand-subtitle {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #6c6759;
+}
+
+.topbar-status {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  color: #6c6759;
+  font-size: 12px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid #e1d3bb;
+  border-radius: 999px;
+  background: #ffffff;
+  white-space: nowrap;
+}
+
+.question-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 10px;
+  align-items: center;
+}
+
+.question-form .ant-input-affix-wrapper {
+  min-height: 44px;
+  border-radius: 6px;
+  border-color: #d6c5a7;
+  background: #ffffff;
+}
+
+.question-form .ant-input {
+  color: #25251f;
+}
+
+.question-form .ant-btn {
+  height: 44px;
+  border-radius: 6px;
+  font-weight: 650;
+}
+
+.workbench-grid {
+  flex: 1;
+  min-height: 650px;
+  display: grid;
+  grid-template-columns: 296px minmax(560px, 1fr) 326px;
+  gap: 14px;
+}
+
+.side-column,
+.evidence-column {
+  min-height: 650px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panel {
+  border: 1px solid #e1d3bb;
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.94);
+  box-shadow: 0 10px 30px rgba(84, 64, 35, 0.08);
+}
+
+.panel-header {
+  min-height: 44px;
+  padding: 12px 14px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(225, 211, 187, 0.72);
+}
+
+.panel-title {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #25251f;
+}
+
+.panel-body {
+  padding: 12px 14px 14px;
+}
+
+.answer-panel {
+  flex: 1;
+  min-height: 314px;
+}
+
+.answer-text {
+  margin: 0;
+  color: #343229;
+  font-size: 14px;
+  line-height: 1.72;
+}
+
+.entity-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.entity-chip {
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(54, 124, 115, 0.26);
+  background: rgba(54, 124, 115, 0.1);
+  color: #367c73;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-overview {
+  min-height: 204px;
+}
+
+.asset-list {
+  display: grid;
+  gap: 10px;
+}
+
+.asset-row,
+.source-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(225, 211, 187, 0.64);
+}
+
+.asset-row:last-child,
+.source-row:last-child {
+  border-bottom: 0;
+}
+
+.asset-label,
+.source-label {
+  color: #25251f;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.asset-meta,
+.source-meta {
+  margin-top: 3px;
+  color: #6c6759;
+  font-size: 12px;
+}
+
+.asset-value,
+.source-state {
+  color: #9d3327;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.graph-panel {
+  min-height: 650px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.graph-toolbar {
+  min-height: 54px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e1d3bb;
+}
+
+.graph-stage {
+  position: relative;
+  flex: 1;
+  min-height: 568px;
+  background:
+    linear-gradient(rgba(184, 137, 59, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(184, 137, 59, 0.08) 1px, transparent 1px),
+    #fffdf7;
+  background-size: 28px 28px;
+}
+
+.graph-svg {
+  width: 100%;
+  height: 100%;
+  min-height: 568px;
+  display: block;
+}
+
+.graph-edge {
+  stroke: rgba(108, 103, 89, 0.38);
+  stroke-width: 2;
+}
+
+.graph-edge.is-highlighted {
+  stroke: #9d3327;
+  stroke-width: 3;
+}
+
+.edge-label {
+  fill: #6c6759;
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: #fffdf7;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.node-label {
+  fill: #25251f;
+  font-size: 12px;
+  font-weight: 700;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.node-desc {
+  fill: #6c6759;
+  font-size: 10px;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.graph-node circle,
+.graph-node rect {
+  filter: drop-shadow(0 6px 10px rgba(84, 64, 35, 0.14));
+}
+
+.graph-node.is-highlighted circle,
+.graph-node.is-highlighted rect {
+  stroke-width: 4;
+}
+
+.legend-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #6c6759;
+  font-size: 12px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.evidence-panel {
+  flex: 1;
+  min-height: 390px;
+}
+
+.evidence-list {
+  display: grid;
+  gap: 10px;
+}
+
+.evidence-card {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(225, 211, 187, 0.7);
+}
+
+.evidence-card:last-child {
+  border-bottom: 0;
+}
+
+.evidence-title {
+  margin: 0;
+  color: #25251f;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.evidence-snippet {
+  margin: 7px 0;
+  color: #4a473c;
+  font-size: 12px;
+  line-height: 1.58;
+}
+
+.evidence-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #6c6759;
+  font-size: 11px;
+}
+
+.empty-state {
+  margin: 0;
+  color: #6c6759;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.source-status {
+  min-height: 246px;
+}
+
+.intent-badge {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #367c73;
+  font-size: 12px;
+  font-weight: 700;
+}
