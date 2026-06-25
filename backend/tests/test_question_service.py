@@ -123,6 +123,57 @@ def test_question_service_uses_llm_query_entities_before_keyword_fallback():
     assert service._extract_terms("偏头疼和眩晕有什么关系？") == ["偏头疼", "眩晕"]
 
 
+def test_question_service_merges_llm_query_entities_and_expanded_entities():
+    class FakeQueryExtractor:
+        def extract_query(self, question):
+            assert question == "头痛和肝有什么关联？"
+            return {
+                "entities": ["头痛", "肝"],
+                "expanded_entities": ["肝阳上亢", "肝火上炎", "头痛", "头风"],
+                "relations": ["相关"],
+            }
+
+    service = QuestionService.demo()
+    service.query_extractor = FakeQueryExtractor()
+
+    assert service._extract_terms("头痛和肝有什么关联？") == [
+        "头痛",
+        "肝",
+        "肝阳上亢",
+        "肝火上炎",
+        "头风",
+    ]
+
+
+def test_question_service_sends_expanded_entities_into_retrieval_terms():
+    captured = {}
+
+    class FakeQueryExtractor:
+        def extract_query(self, question):
+            return {
+                "entities": ["头痛", "肝"],
+                "expanded_entities": ["肝阳上亢", "肝火上炎"],
+                "relations": ["相关"],
+            }
+
+    class FakeRetriever:
+        def retrieve(self, question, terms, top_k=8):
+            captured["terms"] = terms
+            return type(
+                "Retrieval",
+                (),
+                {"nodes": [], "edges": [], "evidence_ids": [], "seed_node_ids": []},
+            )()
+
+    service = QuestionService.demo()
+    service.query_extractor = FakeQueryExtractor()
+    service.hybrid_retriever = FakeRetriever()
+
+    service.answer("头痛和肝有什么关联？")
+
+    assert captured["terms"] == ["头痛", "肝", "肝阳上亢", "肝火上炎"]
+
+
 def test_question_service_uses_question_text_when_query_extractor_fails():
     class BrokenQueryExtractor:
         def extract_query(self, question):

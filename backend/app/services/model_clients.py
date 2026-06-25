@@ -133,9 +133,15 @@ class StructuredExtractionClient:
         return self._chat_json(
             system=(
                 "你是中医知识图谱查询理解器。"
-                "从用户问题中抽取适合图谱检索的实体和关系意图，只输出 JSON。"
-                "输出格式：{\"entities\":[\"头痛\"],\"relations\":[\"病因\",\"证候\"]}。"
-                "实体应保留用户原词或标准中医术语，不要编造解释。"
+                "从用户问题中抽取适合图谱检索的原始实体、衍生相关实体和关系意图，只输出 JSON。"
+                "entities 必须保留用户明示实体；expanded_entities 输出同义词、标准中医术语、相关脏腑、"
+                "常见相关证候或病名，用于扩大关键词检索和向量检索。"
+                "例如用户问“头痛和肝有什么关联”，entities 可为 [\"头痛\",\"肝\"]，"
+                "expanded_entities 可为 [\"肝阳上亢\",\"肝火上炎\",\"头风\",\"头痛偏左\"]。"
+                "输出格式：{\"entities\":[\"头痛\",\"肝\"],"
+                "\"expanded_entities\":[\"肝阳上亢\",\"肝火上炎\"],"
+                "\"relations\":[\"相关\",\"证候\"]}。"
+                "实体应保留用户原词或标准中医术语，不要编造具体结论。"
             ),
             user=f"问题：{question}",
         )
@@ -209,6 +215,7 @@ class _DeterministicExtractionHttpClient:
                     "干姜",
                     "便秘",
                     "头痛",
+                    "肝",
                     "偏头疼",
                     "眩晕",
                 ]
@@ -216,7 +223,14 @@ class _DeterministicExtractionHttpClient:
             ]
             if not entities:
                 entities = [question.strip("？?。！!，,；;")]
-            payload = {"entities": entities, "relations": []}
+            expanded_entities = []
+            if "头痛" in entities and "肝" in entities:
+                expanded_entities = ["肝阳上亢", "肝火上炎", "头风", "头痛偏左"]
+            payload = {
+                "entities": entities,
+                "expanded_entities": expanded_entities,
+                "relations": [],
+            }
         else:
             text = user.removeprefix("文本：")
             entities = []

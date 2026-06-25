@@ -176,8 +176,14 @@ class QuestionService:
                     for entity in extracted.get("entities", [])
                     if str(entity).strip()
                 ]
-                if entities:
-                    return entities
+                expanded_entities = [
+                    str(entity).strip()
+                    for entity in extracted.get("expanded_entities", [])
+                    if str(entity).strip()
+                ]
+                terms = _unique_terms(entities + expanded_entities)
+                if terms:
+                    return terms
             except Exception:
                 pass
         compact = "".join(question.split()).strip("？?。！!，,；;")
@@ -199,3 +205,13 @@ def _format_graph_paths(nodes, edges) -> list[str]:
         target = node_names.get(edge.target, edge.target)
         paths.append(f"{source} -> {edge.display} -> {target}")
     return paths
+
+
+def _unique_terms(terms: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            unique.append(term)
+    return unique

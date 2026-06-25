@@ -99,3 +99,40 @@ def test_structured_extraction_client_extracts_relevant_window_around_query_hint
     user_prompt = captured["user"]
     assert "头痛偏左" in user_prompt
     assert len(user_prompt) < 1800
+
+
+def test_structured_extraction_client_query_prompt_requests_expanded_entities():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read().decode("utf-8"))
+        captured["system"] = payload["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"entities":["头痛","肝"],'
+                                '"expanded_entities":["肝阳上亢","肝火上炎","头风"],'
+                                '"relations":["相关"]}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = StructuredExtractionClient(
+        base_url="https://api.siliconflow.cn/v1",
+        api_key="secret",
+        model="nclusionAI/Ling-flash-2.0",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    extracted = client.extract_query("头痛和肝有什么关联？")
+
+    assert extracted["expanded_entities"] == ["肝阳上亢", "肝火上炎", "头风"]
+    assert "expanded_entities" in captured["system"]
+    assert "衍生" in captured["system"]
