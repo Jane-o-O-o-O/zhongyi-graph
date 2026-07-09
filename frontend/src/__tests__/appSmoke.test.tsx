@@ -15,6 +15,11 @@ const graphApi = {
   linkDirectionalParticleSpeed: vi.fn(),
   linkDirectionalParticleWidth: vi.fn(),
   linkWidth: vi.fn(),
+  nodeRelSize: vi.fn(),
+  nodeOpacity: vi.fn(),
+  linkOpacity: vi.fn(),
+  linkHoverPrecision: vi.fn(),
+  showPointerCursor: vi.fn(),
   onNodeHover: vi.fn(),
   onLinkHover: vi.fn(),
   onNodeClick: vi.fn(),
@@ -97,9 +102,11 @@ describe('App', () => {
     expect(screen.getByText('中医知识图谱智能平台')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('请输入中医问题，例如：失眠可以从哪些证候分析？')).toBeInTheDocument();
     expect(screen.getByText('知识图谱')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /解读/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('综合研判')).not.toBeInTheDocument();
     expect(container.querySelector('.graph-stage-fullscreen')).toBeInTheDocument();
     expect(container.querySelector('.topbar')).toHaveClass('glass-overlay');
-    expect(container.querySelector('.answer-panel')).toHaveClass('glass-overlay');
+    expect(container.querySelector('.insight-toggle')).toBeInTheDocument();
     expect(screen.queryByText('数据资产')).not.toBeInTheDocument();
     expect(screen.queryByText('证据链')).not.toBeInTheDocument();
     expect(screen.queryByText('来源状态')).not.toBeInTheDocument();
@@ -118,6 +125,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /研判/ }));
 
     expect(await screen.findByText('黄连阿胶汤路径已收束到方药与药味节点，可继续查看清热滋阴证据。')).toBeInTheDocument();
+    expect(screen.getByLabelText('综合研判')).toHaveClass('glass-overlay');
+    expect(screen.getByRole('button', { name: /收起/ })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getAllByText('黄连阿胶汤').length).toBeGreaterThan(0);
     expect(screen.getByText('中药')).toBeInTheDocument();
     expect(screen.queryByText('Formula')).not.toBeInTheDocument();
@@ -137,6 +146,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /研判/ }));
 
     expect(await screen.findByText(/已基于本地知识图谱给出稳态研判/)).toBeInTheDocument();
+    expect(screen.getByLabelText('综合研判')).toHaveClass('glass-overlay');
     expect(screen.getByText('知识图谱')).toBeInTheDocument();
   });
 });

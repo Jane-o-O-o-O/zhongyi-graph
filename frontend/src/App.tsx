@@ -1,5 +1,5 @@
 import { ConfigProvider } from 'antd';
-import { BookOpen, CheckCircle2 } from 'lucide-react';
+import { BookOpen, CheckCircle2, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { submitQuestion } from './api/client';
 import type { QueryResult } from './api/types';
@@ -172,6 +172,7 @@ export default function App() {
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QueryResult>(initialResult);
+  const [insightOpen, setInsightOpen] = useState(false);
 
   const theme = useMemo(
     () => ({
@@ -202,8 +203,10 @@ export default function App() {
     try {
       const nextResult = await submitQuestion(normalizedQuestion);
       setResult(nextResult);
+      setInsightOpen(true);
     } catch {
       setResult((current) => fallbackResult(normalizedQuestion, current));
+      setInsightOpen(true);
     } finally {
       setLoading(false);
     }
@@ -236,11 +239,22 @@ export default function App() {
           </div>
         </header>
 
-        <section className="workbench-grid overlay-workbench">
-          <aside className="side-column">
+        <button
+          className="insight-toggle glass-overlay"
+          type="button"
+          aria-expanded={insightOpen}
+          onClick={() => setInsightOpen((open) => !open)}
+        >
+          <Sparkles size={16} />
+          <span>{insightOpen ? '收起' : '解读'}</span>
+          <i aria-hidden="true">{result.intent}</i>
+        </button>
+
+        {insightOpen ? (
+          <aside className="insight-drawer">
             <AnswerPanel answer={result.answer} entities={result.entities} intent={result.intent} />
           </aside>
-        </section>
+        ) : null}
       </main>
     </ConfigProvider>
   );

@@ -13,6 +13,11 @@ const linkDirectionalParticles = vi.fn();
 const linkDirectionalParticleSpeed = vi.fn();
 const linkDirectionalParticleWidth = vi.fn();
 const linkWidth = vi.fn();
+const nodeRelSize = vi.fn();
+const nodeOpacity = vi.fn();
+const linkOpacity = vi.fn();
+const linkHoverPrecision = vi.fn();
+const showPointerCursor = vi.fn();
 const onNodeHover = vi.fn();
 const onLinkHover = vi.fn();
 const onNodeClick = vi.fn();
@@ -34,6 +39,11 @@ const graphApi = {
   linkDirectionalParticleSpeed,
   linkDirectionalParticleWidth,
   linkWidth,
+  nodeRelSize,
+  nodeOpacity,
+  linkOpacity,
+  linkHoverPrecision,
+  showPointerCursor,
   onNodeHover,
   onLinkHover,
   onNodeClick,
@@ -86,6 +96,11 @@ describe('GraphCanvas', () => {
       linkDirectionalParticleSpeed,
       linkDirectionalParticleWidth,
       linkWidth,
+      nodeRelSize,
+      nodeOpacity,
+      linkOpacity,
+      linkHoverPrecision,
+      showPointerCursor,
       onNodeHover,
       onLinkHover,
       onNodeClick,
@@ -122,6 +137,11 @@ describe('GraphCanvas', () => {
     );
     expect(nodeLabel).toHaveBeenCalledWith(expect.any(Function));
     expect(nodeColor).toHaveBeenCalledWith(expect.any(Function));
+    expect(nodeRelSize).toHaveBeenCalledWith(7);
+    expect(nodeOpacity).toHaveBeenCalledWith(0.92);
+    expect(linkOpacity).toHaveBeenCalledWith(0.34);
+    expect(linkHoverPrecision).toHaveBeenCalledWith(6);
+    expect(showPointerCursor).toHaveBeenCalledWith(expect.any(Function));
     expect(linkDirectionalParticles).toHaveBeenCalledWith(expect.any(Function));
     expect(linkDirectionalParticleSpeed).toHaveBeenCalledWith(expect.any(Function));
     expect(onNodeHover).toHaveBeenCalledWith(expect.any(Function));

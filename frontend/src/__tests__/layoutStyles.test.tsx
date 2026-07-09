@@ -20,11 +20,12 @@ describe('layout styles', () => {
     expect(appCss).toContain('overflow: hidden;');
   });
 
-  it('uses translucent glass overlays for non-graph panels', () => {
+  it('uses dark translucent HUD overlays instead of dashboard cards', () => {
     expect(appCss).toContain('.glass-overlay');
-    expect(appCss).toContain('backdrop-filter: blur(18px);');
-    expect(appCss).toContain('rgba(255, 250, 240, 0.68)');
-    expect(appCss).toContain('.answer-panel {');
+    expect(appCss).toContain('backdrop-filter: blur(22px);');
+    expect(appCss).toContain('rgba(5, 12, 16, 0.56)');
+    expect(appCss).toContain('.insight-drawer');
+    expect(appCss).toContain('.insight-toggle');
     expect(appCss).toContain('overflow: hidden;');
     expect(appCss).toContain('.answer-panel .panel-body {');
     expect(appCss).toContain('overflow: auto;');

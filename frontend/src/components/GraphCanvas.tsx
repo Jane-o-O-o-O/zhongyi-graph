@@ -18,11 +18,19 @@ type GraphCanvasProps = {
   highlightedPath?: string[];
 };
 
+type DemoGraphApi = ForceGraph3DInstance<ForceGraphNode, ForceGraphLink> & {
+  nodeRelSize(size: number): DemoGraphApi;
+  nodeOpacity(opacity: number): DemoGraphApi;
+  linkOpacity(opacity: number): DemoGraphApi;
+  linkHoverPrecision(precision: number): DemoGraphApi;
+  showPointerCursor(accessor: (obj: ForceGraphNode | ForceGraphLink) => boolean): DemoGraphApi;
+};
+
 const TcmForceGraph3D = ForceGraph3D as unknown as {
   new (
     element: HTMLElement,
     configOptions?: ConfigOptions,
-  ): ForceGraph3DInstance<ForceGraphNode, ForceGraphLink>;
+  ): DemoGraphApi;
 };
 
 function endpointId(endpoint: string | number | ForceGraphNode | undefined) {
@@ -50,7 +58,7 @@ function graphSize(container: HTMLDivElement) {
 
 export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const graphRef = useRef<ForceGraph3DInstance<ForceGraphNode, ForceGraphLink> | null>(null);
+  const graphRef = useRef<DemoGraphApi | null>(null);
   const hoverNodeIds = useRef<Set<string>>(new Set());
   const hoverLinkIds = useRef<Set<string>>(new Set());
 
@@ -90,6 +98,11 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
       .backgroundColor('rgba(0,0,0,0)')
       .showNavInfo(false)
       .graphData(graphData)
+      .nodeRelSize(7)
+      .nodeOpacity(0.92)
+      .linkOpacity(0.34)
+      .linkHoverPrecision(6)
+      .showPointerCursor(() => true)
       .nodeLabel(nodeTooltip)
       .linkLabel(linkTooltip)
       .nodeColor((node) => {
