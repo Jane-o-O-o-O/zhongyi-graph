@@ -13,6 +13,15 @@ const linkDirectionalParticles = vi.fn();
 const linkDirectionalParticleSpeed = vi.fn();
 const linkDirectionalParticleWidth = vi.fn();
 const linkWidth = vi.fn();
+const warmupTicks = vi.fn();
+const cooldownTicks = vi.fn();
+const d3AlphaDecay = vi.fn();
+const d3VelocityDecay = vi.fn();
+const d3Force = vi.fn();
+const linkForceDistance = vi.fn();
+const linkForceStrength = vi.fn();
+const linkForceIterations = vi.fn();
+const chargeForceStrength = vi.fn();
 const nodeRelSize = vi.fn();
 const nodeOpacity = vi.fn();
 const nodeThreeObject = vi.fn();
@@ -31,6 +40,16 @@ const zoomToFit = vi.fn();
 const cameraPosition = vi.fn();
 const destructor = vi.fn();
 
+const linkForce = {
+  distance: linkForceDistance,
+  strength: linkForceStrength,
+  iterations: linkForceIterations,
+};
+
+const chargeForce = {
+  strength: chargeForceStrength,
+};
+
 const graphApi = {
   graphData,
   nodeLabel,
@@ -41,6 +60,11 @@ const graphApi = {
   linkDirectionalParticleSpeed,
   linkDirectionalParticleWidth,
   linkWidth,
+  warmupTicks,
+  cooldownTicks,
+  d3AlphaDecay,
+  d3VelocityDecay,
+  d3Force,
   nodeRelSize,
   nodeOpacity,
   nodeThreeObject,
@@ -89,6 +113,8 @@ const edges: GraphEdge[] = [
 describe('GraphCanvas', () => {
   beforeEach(() => {
     Object.values(graphApi).forEach((fn) => fn.mockClear());
+    Object.values(linkForce).forEach((fn) => fn.mockClear());
+    Object.values(chargeForce).forEach((fn) => fn.mockClear());
     graphConstructor.mockClear();
     [
       graphData,
@@ -100,6 +126,10 @@ describe('GraphCanvas', () => {
       linkDirectionalParticleSpeed,
       linkDirectionalParticleWidth,
       linkWidth,
+      warmupTicks,
+      cooldownTicks,
+      d3AlphaDecay,
+      d3VelocityDecay,
       nodeRelSize,
       nodeOpacity,
       nodeThreeObject,
@@ -117,6 +147,19 @@ describe('GraphCanvas', () => {
       zoomToFit,
       cameraPosition,
     ].forEach(chainable);
+    d3Force.mockImplementation((forceName) => {
+      if (forceName === 'link') {
+        return linkForce;
+      }
+      if (forceName === 'charge') {
+        return chargeForce;
+      }
+      return undefined;
+    });
+    linkForceDistance.mockReturnValue(linkForce);
+    linkForceStrength.mockReturnValue(linkForce);
+    linkForceIterations.mockReturnValue(linkForce);
+    chargeForceStrength.mockReturnValue(chargeForce);
   });
 
   afterEach(() => {
@@ -143,6 +186,16 @@ describe('GraphCanvas', () => {
     );
     expect(nodeLabel).toHaveBeenCalledWith(expect.any(Function));
     expect(nodeColor).toHaveBeenCalledWith(expect.any(Function));
+    expect(warmupTicks).toHaveBeenCalledWith(45);
+    expect(cooldownTicks).toHaveBeenCalledWith(180);
+    expect(d3AlphaDecay).toHaveBeenCalledWith(0.022);
+    expect(d3VelocityDecay).toHaveBeenCalledWith(0.36);
+    expect(d3Force).toHaveBeenCalledWith('link');
+    expect(d3Force).toHaveBeenCalledWith('charge');
+    expect(linkForceDistance).toHaveBeenCalledWith(28);
+    expect(linkForceStrength).toHaveBeenCalledWith(0.48);
+    expect(linkForceIterations).toHaveBeenCalledWith(1);
+    expect(chargeForceStrength).toHaveBeenCalledWith(-42);
     expect(nodeRelSize).toHaveBeenCalledWith(7);
     expect(nodeOpacity).toHaveBeenCalledWith(0.92);
     expect(nodeThreeObject).toHaveBeenCalledWith(expect.any(Function));
@@ -155,6 +208,27 @@ describe('GraphCanvas', () => {
     expect(onNodeHover).toHaveBeenCalledWith(expect.any(Function));
     expect(onLinkHover).toHaveBeenCalledWith(expect.any(Function));
     expect(onNodeClick).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('tightens the force layout for overview-scale graphs', () => {
+    const overviewNodes: GraphNode[] = Array.from({ length: 901 }, (_, index) => ({
+      id: `herb:${index}`,
+      label: 'Herb',
+      name: `中药${index}`,
+    }));
+
+    render(<GraphCanvas nodes={overviewNodes} edges={[]} highlightedPath={[]} />);
+
+    expect(nodeRelSize).toHaveBeenCalledWith(4.8);
+    expect(nodeOpacity).toHaveBeenCalledWith(0.84);
+    expect(warmupTicks).toHaveBeenCalledWith(90);
+    expect(cooldownTicks).toHaveBeenCalledWith(260);
+    expect(d3AlphaDecay).toHaveBeenCalledWith(0.018);
+    expect(d3VelocityDecay).toHaveBeenCalledWith(0.4);
+    expect(linkForceDistance).toHaveBeenCalledWith(22);
+    expect(linkForceStrength).toHaveBeenCalledWith(0.62);
+    expect(linkForceIterations).toHaveBeenCalledWith(2);
+    expect(chargeForceStrength).toHaveBeenCalledWith(-22);
   });
 
   it('sizes the 3D canvas to its container and destroys it on unmount', () => {

@@ -15,6 +15,11 @@ const graphApi = {
   linkDirectionalParticleSpeed: vi.fn(),
   linkDirectionalParticleWidth: vi.fn(),
   linkWidth: vi.fn(),
+  warmupTicks: vi.fn(),
+  cooldownTicks: vi.fn(),
+  d3AlphaDecay: vi.fn(),
+  d3VelocityDecay: vi.fn(),
+  d3Force: vi.fn(),
   nodeRelSize: vi.fn(),
   nodeOpacity: vi.fn(),
   nodeThreeObject: vi.fn(),
@@ -36,6 +41,23 @@ const graphApi = {
 
 Object.values(graphApi).forEach((fn) => {
   fn.mockReturnValue(graphApi);
+});
+const linkForce = {
+  distance: vi.fn().mockReturnThis(),
+  strength: vi.fn().mockReturnThis(),
+  iterations: vi.fn().mockReturnThis(),
+};
+const chargeForce = {
+  strength: vi.fn().mockReturnThis(),
+};
+graphApi.d3Force.mockImplementation((forceName) => {
+  if (forceName === 'link') {
+    return linkForce;
+  }
+  if (forceName === 'charge') {
+    return chargeForce;
+  }
+  return undefined;
 });
 
 vi.mock('3d-force-graph', () => ({
