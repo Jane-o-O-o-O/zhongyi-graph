@@ -17,6 +17,8 @@ const graphApi = {
   linkWidth: vi.fn(),
   nodeRelSize: vi.fn(),
   nodeOpacity: vi.fn(),
+  nodeThreeObject: vi.fn(),
+  nodeThreeObjectExtend: vi.fn(),
   linkOpacity: vi.fn(),
   linkHoverPrecision: vi.fn(),
   showPointerCursor: vi.fn(),

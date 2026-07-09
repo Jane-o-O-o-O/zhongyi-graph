@@ -2,6 +2,8 @@ import ForceGraph3D from '3d-force-graph';
 import type { ConfigOptions, ForceGraph3DInstance } from '3d-force-graph';
 import { Network } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
+import { CanvasTexture, Sprite, SpriteMaterial } from 'three';
+import type { Object3D } from 'three';
 import type { GraphEdge, GraphNode } from '../api/types';
 import { colors } from '../theme/tokens';
 import {
@@ -21,6 +23,8 @@ type GraphCanvasProps = {
 type DemoGraphApi = ForceGraph3DInstance<ForceGraphNode, ForceGraphLink> & {
   nodeRelSize(size: number): DemoGraphApi;
   nodeOpacity(opacity: number): DemoGraphApi;
+  nodeThreeObject(accessor: (node: ForceGraphNode) => Object3D): DemoGraphApi;
+  nodeThreeObjectExtend(extend: boolean): DemoGraphApi;
   linkOpacity(opacity: number): DemoGraphApi;
   linkHoverPrecision(precision: number): DemoGraphApi;
   showPointerCursor(accessor: (obj: ForceGraphNode | ForceGraphLink) => boolean): DemoGraphApi;
@@ -47,6 +51,58 @@ function nodeTooltip(node: ForceGraphNode) {
 
 function linkTooltip(link: ForceGraphLink) {
   return `${link.display || link.relation}`;
+}
+
+function createNodeNameSprite(node: ForceGraphNode) {
+  const label = truncate(node.name || node.id, 10);
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+  const fontSize = 24;
+  const paddingX = 12;
+  const paddingY = 6;
+
+  if (!context) {
+    return new Sprite();
+  }
+
+  context.font = `700 ${fontSize}px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif`;
+  const textWidth = Math.ceil(context.measureText(label).width);
+  const width = textWidth + paddingX * 2;
+  const height = fontSize + paddingY * 2;
+  canvas.width = Math.ceil(width * pixelRatio);
+  canvas.height = Math.ceil(height * pixelRatio);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+
+  context.scale(pixelRatio, pixelRatio);
+  context.font = `700 ${fontSize}px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillStyle = 'rgba(3, 8, 13, 0.34)';
+  context.strokeStyle = node.highlighted ? 'rgba(255, 118, 94, 0.64)' : 'rgba(104, 247, 215, 0.2)';
+  context.lineWidth = 1.4;
+  context.beginPath();
+  context.roundRect(1, 1, width - 2, height - 2, 12);
+  context.fill();
+  context.stroke();
+  context.shadowColor = node.highlighted ? 'rgba(255, 118, 94, 0.76)' : 'rgba(104, 247, 215, 0.62)';
+  context.shadowBlur = 10;
+  context.fillStyle = '#f6fff9';
+  context.fillText(label, width / 2, height / 2);
+
+  const texture = new CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  });
+  const sprite = new Sprite(material);
+  const scale = node.highlighted ? 7.8 : 6.8;
+  sprite.scale.set((width / height) * scale, scale, 1);
+  sprite.position.y = node.highlighted ? 9.2 : 8;
+  return sprite;
 }
 
 function graphSize(container: HTMLDivElement) {
@@ -100,6 +156,8 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
       .graphData(graphData)
       .nodeRelSize(7)
       .nodeOpacity(0.92)
+      .nodeThreeObject(createNodeNameSprite)
+      .nodeThreeObjectExtend(true)
       .linkOpacity(0.34)
       .linkHoverPrecision(6)
       .showPointerCursor(() => true)
