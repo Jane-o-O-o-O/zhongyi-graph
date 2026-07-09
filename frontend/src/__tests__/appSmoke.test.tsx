@@ -1,8 +1,8 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
-import { submitQuestion } from '../api/client';
+import { loadGraphOverview, submitQuestion } from '../api/client';
 import type { QueryResult } from '../api/types';
 
 const graphApi = {
@@ -43,9 +43,11 @@ vi.mock('3d-force-graph', () => ({
 }));
 
 vi.mock('../api/client', () => ({
+  loadGraphOverview: vi.fn(),
   submitQuestion: vi.fn(),
 }));
 
+const mockedLoadGraphOverview = vi.mocked(loadGraphOverview);
 const mockedSubmitQuestion = vi.mocked(submitQuestion);
 
 const successResult: QueryResult = {
@@ -91,6 +93,24 @@ const successResult: QueryResult = {
 
 describe('App', () => {
   beforeEach(() => {
+    Object.values(graphApi).forEach((fn) => fn.mockClear());
+    mockedLoadGraphOverview.mockReset();
+    mockedLoadGraphOverview.mockResolvedValue({
+      graphNodes: [
+        { id: 'formula:归脾汤', label: 'Formula', name: '归脾汤' },
+        { id: 'herb:党参', label: 'Herb', name: '党参' },
+      ],
+      graphEdges: [
+        {
+          id: 'edge:guipi:dangshen',
+          source: 'formula:归脾汤',
+          target: 'herb:党参',
+          relation: 'COMPOSED_OF',
+          display: '组成',
+        },
+      ],
+      highlightedPath: [],
+    });
     mockedSubmitQuestion.mockReset();
   });
 
@@ -98,7 +118,7 @@ describe('App', () => {
     cleanup();
   });
 
-  it('renders the graph-first workbench shell', () => {
+  it('renders the graph-first workbench shell and loads the overview graph', async () => {
     const { container } = render(<App />);
 
     expect(screen.getByText('中医知识图谱智能平台')).toBeInTheDocument();
@@ -112,6 +132,15 @@ describe('App', () => {
     expect(screen.queryByText('数据资产')).not.toBeInTheDocument();
     expect(screen.queryByText('证据链')).not.toBeInTheDocument();
     expect(screen.queryByText('来源状态')).not.toBeInTheDocument();
+    await waitFor(() => expect(mockedLoadGraphOverview).toHaveBeenCalledWith(3000));
+    await waitFor(() =>
+      expect(graphApi.graphData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.arrayContaining([expect.objectContaining({ id: 'formula:归脾汤' })]),
+          links: expect.arrayContaining([expect.objectContaining({ id: 'edge:guipi:dangshen' })]),
+        }),
+      ),
+    );
   });
 
   it('submits a question and renders returned graph data with localized labels', async () => {

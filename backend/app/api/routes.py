@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile
 
 from app.core.config import get_settings
 from app.models.ingestion import IngestionJob, SourceManifest
-from app.models.query import QueryRequest, QueryResponse
+from app.models.query import GraphOverviewResponse, QueryRequest, QueryResponse
 from app.services.ingestion_service import IngestionService
 from app.services.document_parser import DocumentParser
 from app.services.ingestion_repository import IngestionRepository
@@ -157,6 +157,20 @@ def health() -> dict:
 @router.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest) -> QueryResponse:
     return question_service.answer(request.question)
+
+
+@router.get("/graph/overview", response_model=GraphOverviewResponse)
+def graph_overview(limit: int = 3000) -> GraphOverviewResponse:
+    bounded_limit = min(max(limit, 1), 3000)
+    nodes, edges = question_service.graph_service.overview(
+        max_nodes=bounded_limit,
+        max_edges=bounded_limit * 3,
+    )
+    return GraphOverviewResponse(
+        graph_nodes=nodes,
+        graph_edges=edges,
+        highlighted_path=[],
+    )
 
 
 @router.post("/vector/sync")

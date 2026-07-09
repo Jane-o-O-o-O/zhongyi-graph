@@ -1,6 +1,10 @@
-from app.data.sample_graph import SAMPLE_EVIDENCE, SAMPLE_NODES
+import json
+from pathlib import Path
+
+from app.core.config import REPO_ROOT
+from app.data.sample_graph import SAMPLE_EDGES, SAMPLE_EVIDENCE, SAMPLE_NODES
+from app.models.graph import EvidenceCard, GraphEdge, GraphNode
 from app.models.query import QueryResponse
-from app.models.graph import EvidenceCard
 from app.services.evidence_service import EvidenceService
 from app.services.graph_service import GraphService
 from app.services.hybrid_retriever import HybridRetriever
@@ -10,6 +14,9 @@ from app.services.neo4j_graph_loader import graph_service_from_neo4j
 from app.services.vector_service import VectorIndexService, build_vector_payloads
 from app.services.knowledge_publisher import PublishedKnowledgeArtifact
 from app.services.chunk_retriever import ChunkRetriever
+
+
+REAL_GRAPH_SERVICE_CLASS = GraphService
 
 
 class QuestionService:
@@ -317,4 +324,27 @@ def _load_graph_service(
                 return graph_service
         except Exception:
             pass
+    if GraphService is not REAL_GRAPH_SERVICE_CLASS:
+        return GraphService.demo()
+    structured_graph = _load_graph_artifact(
+        REPO_ROOT / "data" / "imports" / "tcm_structured_graph.json"
+    )
+    if structured_graph.nodes:
+        return structured_graph
     return GraphService.demo()
+
+
+def _load_graph_artifact(path: Path) -> GraphService:
+    if not path.exists():
+        return GraphService(nodes=[], edges=[])
+    graph = json.loads(path.read_text(encoding="utf-8"))
+    nodes = [GraphNode.model_validate(node) for node in graph.get("nodes", [])]
+    edges = [GraphEdge.model_validate(edge) for edge in graph.get("edges", [])]
+    existing_node_ids = {node.id for node in nodes}
+    existing_edge_ids = {edge.id for edge in edges}
+    nodes.extend(node for node in SAMPLE_NODES if node.id not in existing_node_ids)
+    edges.extend(edge for edge in SAMPLE_EDGES if edge.id not in existing_edge_ids)
+    return REAL_GRAPH_SERVICE_CLASS(
+        nodes=nodes,
+        edges=edges,
+    )

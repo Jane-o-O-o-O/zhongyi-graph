@@ -26,6 +26,20 @@ def test_query_endpoint_returns_graph_response():
     assert body["evidence"]
 
 
+def test_graph_overview_endpoint_returns_limited_visible_graph():
+    response = client.get("/api/graph/overview", params={"limit": 3})
+
+    assert response.status_code == 200
+    body = response.json()
+    visible_ids = {node["id"] for node in body["graph_nodes"]}
+    assert 1 <= len(body["graph_nodes"]) <= 3
+    assert all(
+        edge["source"] in visible_ids and edge["target"] in visible_ids
+        for edge in body["graph_edges"]
+    )
+    assert body["highlighted_path"] == []
+
+
 def test_register_ingestion_source_echoes_manifest():
     response = client.post(
         "/api/ingestion/sources",

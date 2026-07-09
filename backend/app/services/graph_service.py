@@ -36,6 +36,31 @@ class GraphService:
         selected_edges = [edge for edge in self.edges if edge.id in selected_edge_ids]
         return selected_nodes, selected_edges
 
+    def overview(
+        self,
+        *,
+        max_nodes: int = 3000,
+        max_edges: int = 9000,
+    ) -> tuple[list[GraphNode], list[GraphEdge]]:
+        degree_by_id = {node.id: 0 for node in self.nodes}
+        for edge in self.edges:
+            if edge.source in degree_by_id:
+                degree_by_id[edge.source] += 1
+            if edge.target in degree_by_id:
+                degree_by_id[edge.target] += 1
+
+        selected_nodes = sorted(
+            self.nodes,
+            key=lambda node: (-degree_by_id.get(node.id, 0), node.label, node.name, node.id),
+        )[:max_nodes]
+        visible_ids = {node.id for node in selected_nodes}
+        selected_edges = [
+            edge
+            for edge in self.edges
+            if edge.source in visible_ids and edge.target in visible_ids
+        ][:max_edges]
+        return selected_nodes, selected_edges
+
     def neighborhood(
         self,
         node_ids: list[str],

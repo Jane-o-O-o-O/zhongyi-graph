@@ -35,6 +35,12 @@ export type ApiQueryResponse = {
   evidence: EvidenceCard[];
 };
 
+export type ApiGraphOverviewResponse = {
+  graph_nodes: GraphNode[];
+  graph_edges: GraphEdge[];
+  highlighted_path: string[];
+};
+
 export type QueryResult = {
   question: string;
   answer: string;
@@ -44,4 +50,10 @@ export type QueryResult = {
   graphEdges: GraphEdge[];
   highlightedPath: string[];
   evidence: EvidenceCard[];
+};
+
+export type GraphOverview = {
+  graphNodes: GraphNode[];
+  graphEdges: GraphEdge[];
+  highlightedPath: string[];
 };

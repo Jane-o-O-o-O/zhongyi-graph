@@ -1,7 +1,7 @@
 import { ConfigProvider } from 'antd';
 import { BookOpen, CheckCircle2, Sparkles } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { submitQuestion } from './api/client';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { loadGraphOverview, submitQuestion } from './api/client';
 import type { QueryResult } from './api/types';
 import { AnswerPanel } from './components/AnswerPanel';
 import { GraphCanvas } from './components/GraphCanvas';
@@ -173,6 +173,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QueryResult>(initialResult);
   const [insightOpen, setInsightOpen] = useState(false);
+  const submittedRef = useRef(false);
 
   const theme = useMemo(
     () => ({
@@ -193,12 +194,37 @@ export default function App() {
     [],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+
+    loadGraphOverview(3000)
+      .then((overview) => {
+        if (cancelled || submittedRef.current) {
+          return;
+        }
+        setResult((current) => ({
+          ...current,
+          graphNodes: overview.graphNodes,
+          graphEdges: overview.graphEdges,
+          highlightedPath: overview.highlightedPath,
+        }));
+      })
+      .catch(() => {
+        // Keep the local curated starter graph when the overview API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function handleSubmit() {
     const normalizedQuestion = question.trim();
     if (!normalizedQuestion || loading) {
       return;
     }
 
+    submittedRef.current = true;
     setLoading(true);
     try {
       const nextResult = await submitQuestion(normalizedQuestion);
