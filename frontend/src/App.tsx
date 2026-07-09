@@ -144,7 +144,7 @@ const initialResult: QueryResult = {
   ],
 };
 
-const HOME_GRAPH_LIMIT = 1500;
+const HOME_GRAPH_LIMIT = 700;
 
 function fallbackResult(question: string, previous: QueryResult): QueryResult {
   return {

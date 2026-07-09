@@ -30,6 +30,16 @@ type DemoGraphApi = ForceGraph3DInstance<ForceGraphNode, ForceGraphLink> & {
   showPointerCursor(accessor: (obj: ForceGraphNode | ForceGraphLink) => boolean): DemoGraphApi;
 };
 
+type GraphLinkForce = {
+  distance(distance: number): GraphLinkForce;
+  strength(strength: number): GraphLinkForce;
+  iterations(iterations: number): GraphLinkForce;
+};
+
+type GraphChargeForce = {
+  strength(strength: number): GraphChargeForce;
+};
+
 const TcmForceGraph3D = ForceGraph3D as unknown as {
   new (
     element: HTMLElement,
@@ -112,6 +122,24 @@ function graphSize(container: HTMLDivElement) {
   };
 }
 
+function configureOverviewSpread(graph: DemoGraphApi, nodeCount: number) {
+  if (nodeCount < 500) {
+    return;
+  }
+
+  graph
+    .warmupTicks(80)
+    .cooldownTicks(260)
+    .d3AlphaDecay(0.018)
+    .d3VelocityDecay(0.32);
+
+  const linkForce = graph.d3Force('link') as GraphLinkForce | undefined;
+  linkForce?.distance(58).strength(0.28).iterations(1);
+
+  const chargeForce = graph.d3Force('charge') as GraphChargeForce | undefined;
+  chargeForce?.strength(-95);
+}
+
 export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<DemoGraphApi | null>(null);
@@ -149,6 +177,7 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
     if (!container) {
       return undefined;
     }
+    const overviewMode = graphData.nodes.length >= 500;
 
     const graph = new TcmForceGraph3D(container, { controlType: 'orbit' })
       .backgroundColor('rgba(0,0,0,0)')
@@ -226,6 +255,7 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
         graph.cameraPosition(position, { x, y, z }, 1200);
       });
 
+    configureOverviewSpread(graph, graphData.nodes.length);
     graphRef.current = graph;
 
     const applySize = () => {
@@ -235,7 +265,11 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
     applySize();
 
     const fitTimer = window.setTimeout(() => {
-      graph.zoomToFit(900, 80);
+      graph.zoomToFit(
+        900,
+        80,
+        (node) => !overviewMode || (adjacency.linksByNode.get(node.id)?.length ?? 0) > 0,
+      );
     }, 360);
 
     let resizeObserver: ResizeObserver | undefined;

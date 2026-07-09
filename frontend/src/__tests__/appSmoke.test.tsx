@@ -132,7 +132,7 @@ describe('App', () => {
     expect(screen.queryByText('数据资产')).not.toBeInTheDocument();
     expect(screen.queryByText('证据链')).not.toBeInTheDocument();
     expect(screen.queryByText('来源状态')).not.toBeInTheDocument();
-    await waitFor(() => expect(mockedLoadGraphOverview).toHaveBeenCalledWith(1500));
+    await waitFor(() => expect(mockedLoadGraphOverview).toHaveBeenCalledWith(700));
     await waitFor(() =>
       expect(graphApi.graphData).toHaveBeenCalledWith(
         expect.objectContaining({
