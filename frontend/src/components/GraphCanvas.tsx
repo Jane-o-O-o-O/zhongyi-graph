@@ -1,16 +1,16 @@
-import { Graph } from '@antv/g6';
+import ForceGraph3D from '3d-force-graph';
+import type { ConfigOptions, ForceGraph3DInstance } from '3d-force-graph';
 import { Network } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import type { GraphEdge, GraphNode } from '../api/types';
 import { colors } from '../theme/tokens';
-import { buildG6GraphData, legendItems } from './graphData';
 import {
-  edgeVisualStyle,
-  graphBehaviors,
-  graphLayoutConfig,
-  graphViewportConfig,
-  nodeVisualStyle,
-} from './graphVisualStyle';
+  buildForceGraphData,
+  type ForceGraphLink,
+  type ForceGraphNode,
+  legendItems,
+  truncate,
+} from './graphData';
 
 type GraphCanvasProps = {
   nodes: GraphNode[];
@@ -18,18 +18,67 @@ type GraphCanvasProps = {
   highlightedPath?: string[];
 };
 
-function getDatumString(data: Record<string, unknown> | undefined, key: string, fallback = '') {
-  const value = data?.[key];
-  return typeof value === 'string' ? value : fallback;
+const TcmForceGraph3D = ForceGraph3D as unknown as {
+  new (
+    element: HTMLElement,
+    configOptions?: ConfigOptions,
+  ): ForceGraph3DInstance<ForceGraphNode, ForceGraphLink>;
+};
+
+function endpointId(endpoint: string | number | ForceGraphNode | undefined) {
+  if (typeof endpoint === 'object' && endpoint) {
+    return String(endpoint.id);
+  }
+  return String(endpoint ?? '');
+}
+
+function nodeTooltip(node: ForceGraphNode) {
+  const description = node.description ? `\n${node.description}` : '';
+  return `${node.name}｜${node.displayLabel}${description}`;
+}
+
+function linkTooltip(link: ForceGraphLink) {
+  return `${link.display || link.relation}`;
+}
+
+function graphSize(container: HTMLDivElement) {
+  return {
+    width: Math.max(container.clientWidth || window.innerWidth || 1180, 320),
+    height: Math.max(container.clientHeight || window.innerHeight || 760, 320),
+  };
 }
 
 export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const graphRef = useRef<Graph | null>(null);
+  const graphRef = useRef<ForceGraph3DInstance<ForceGraphNode, ForceGraphLink> | null>(null);
+  const hoverNodeIds = useRef<Set<string>>(new Set());
+  const hoverLinkIds = useRef<Set<string>>(new Set());
+
   const graphData = useMemo(
-    () => buildG6GraphData(nodes, edges, highlightedPath),
+    () => buildForceGraphData(nodes, edges, highlightedPath),
     [nodes, edges, highlightedPath],
   );
+
+  const adjacency = useMemo(() => {
+    const linksByNode = new Map<string, ForceGraphLink[]>();
+    const neighborsByNode = new Map<string, Set<string>>();
+
+    graphData.nodes.forEach((node) => {
+      linksByNode.set(node.id, []);
+      neighborsByNode.set(node.id, new Set());
+    });
+
+    graphData.links.forEach((link) => {
+      const source = endpointId(link.source);
+      const target = endpointId(link.target);
+      linksByNode.get(source)?.push(link);
+      linksByNode.get(target)?.push(link);
+      neighborsByNode.get(source)?.add(target);
+      neighborsByNode.get(target)?.add(source);
+    });
+
+    return { linksByNode, neighborsByNode };
+  }, [graphData]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -37,115 +86,123 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
       return undefined;
     }
 
-    const graph = new Graph({
-      container,
-      autoResize: true,
-      autoFit: graphViewportConfig.autoFit,
-      zoom: graphViewportConfig.zoom,
-      zoomRange: graphViewportConfig.zoomRange,
-      padding: graphViewportConfig.padding,
-      data: graphData,
-      animation: {
-        duration: 420,
-        easing: 'ease-cubic',
-      },
-      layout: graphLayoutConfig,
-      node: {
-        type: 'circle',
-        style: (datum) => {
-          const name = getDatumString(datum.data, 'name', String(datum.id));
-          const displayLabel = getDatumString(datum.data, 'displayLabel', '实体');
-          const color = getDatumString(datum.data, 'color', colors.mutedInk);
-          const highlighted = datum.states?.includes('highlighted');
-          return nodeVisualStyle({
-            id: String(datum.id),
-            name,
-            displayLabel,
-            color,
-            highlighted: Boolean(highlighted),
-          });
-        },
-        state: {
-          selected: {
-            halo: true,
-            haloStroke: colors.cinnabar,
-            haloStrokeOpacity: 0.24,
-            haloLineWidth: 14,
-            lineWidth: 1,
-            stroke: colors.cinnabar,
-          },
-          active: {
-            halo: true,
-            haloStroke: colors.gold,
-            haloStrokeOpacity: 0.24,
-            haloLineWidth: 14,
-          },
-        },
-      },
-      edge: {
-        type: 'line',
-        style: (datum) => {
-          const isHighlighted = datum.states?.includes('highlighted');
-          return edgeVisualStyle({
-            display: getDatumString(datum.data, 'display', ''),
-            highlighted: Boolean(isHighlighted),
-          });
-        },
-        state: {
-          selected: {
-            stroke: colors.cinnabar,
-            lineWidth: 2.6,
-          },
-          active: {
-            stroke: colors.gold,
-            lineWidth: 2.4,
-          },
-        },
-      },
-      behaviors: graphBehaviors,
-    });
+    const graph = new TcmForceGraph3D(container, { controlType: 'orbit' })
+      .backgroundColor('rgba(0,0,0,0)')
+      .showNavInfo(false)
+      .graphData(graphData)
+      .nodeLabel(nodeTooltip)
+      .linkLabel(linkTooltip)
+      .nodeColor((node) => {
+        const active = hoverNodeIds.current.size === 0 || hoverNodeIds.current.has(node.id);
+        if (node.highlighted || hoverNodeIds.current.has(node.id)) {
+          return node.color;
+        }
+        return active ? node.color : 'rgba(218, 205, 178, 0.28)';
+      })
+      .linkColor((link) => {
+        if (link.highlighted || hoverLinkIds.current.has(link.id)) {
+          return colors.cinnabar;
+        }
+        return hoverLinkIds.current.size > 0 ? 'rgba(218, 205, 178, 0.16)' : 'rgba(218, 205, 178, 0.34)';
+      })
+      .linkWidth((link) => (link.highlighted || hoverLinkIds.current.has(link.id) ? 3.2 : 0.9))
+      .linkDirectionalParticles((link) => (link.highlighted || hoverLinkIds.current.has(link.id) ? 4 : 0))
+      .linkDirectionalParticleWidth(3.2)
+      .linkDirectionalParticleSpeed((link) => Math.max(link.value, 1) * 0.001)
+      .onNodeHover((node) => {
+        hoverNodeIds.current.clear();
+        hoverLinkIds.current.clear();
+
+        if (node) {
+          hoverNodeIds.current.add(node.id);
+          adjacency.neighborsByNode.get(node.id)?.forEach((id) => hoverNodeIds.current.add(id));
+          adjacency.linksByNode.get(node.id)?.forEach((link) => hoverLinkIds.current.add(link.id));
+        }
+
+        graph
+          .nodeColor(graph.nodeColor())
+          .linkColor(graph.linkColor())
+          .linkWidth(graph.linkWidth())
+          .linkDirectionalParticles(graph.linkDirectionalParticles());
+      })
+      .onLinkHover((link) => {
+        hoverNodeIds.current.clear();
+        hoverLinkIds.current.clear();
+
+        if (link) {
+          hoverLinkIds.current.add(link.id);
+          hoverNodeIds.current.add(endpointId(link.source));
+          hoverNodeIds.current.add(endpointId(link.target));
+        }
+
+        graph
+          .nodeColor(graph.nodeColor())
+          .linkColor(graph.linkColor())
+          .linkWidth(graph.linkWidth())
+          .linkDirectionalParticles(graph.linkDirectionalParticles());
+      })
+      .onNodeClick((node) => {
+        const x = Number(node.x ?? 0);
+        const y = Number(node.y ?? 0);
+        const z = Number(node.z ?? 0);
+        const distance = 90;
+        const distRatio = 1 + distance / Math.max(Math.hypot(x, y, z), 1);
+        const position =
+          x || y || z
+            ? { x: x * distRatio, y: y * distRatio, z: z * distRatio }
+            : { x: 0, y: 0, z: distance };
+
+        graph.cameraPosition(position, { x, y, z }, 1200);
+      });
 
     graphRef.current = graph;
-    let destroyed = false;
-    const destroyGraph = () => {
-      if (destroyed) {
-        return;
-      }
-      destroyed = true;
-      graph.destroy();
+
+    const applySize = () => {
+      const nextSize = graphSize(container);
+      graph.width(nextSize.width).height(nextSize.height);
+    };
+    applySize();
+
+    const fitTimer = window.setTimeout(() => {
+      graph.zoomToFit(900, 80);
+    }, 360);
+
+    let resizeObserver: ResizeObserver | undefined;
+    if ('ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(applySize);
+      resizeObserver.observe(container);
+    } else {
+      globalThis.addEventListener('resize', applySize);
+    }
+
+    return () => {
+      window.clearTimeout(fitTimer);
+      resizeObserver?.disconnect();
+      globalThis.removeEventListener('resize', applySize);
+      graph._destructor();
       if (graphRef.current === graph) {
         graphRef.current = null;
       }
     };
-    const renderTask = graph.render();
-    void renderTask.then(() => {
-      if (!destroyed) {
-        void graph.fitCenter(false);
-      }
-    });
-
-    return () => {
-      void renderTask.then(destroyGraph, destroyGraph);
-    };
-  }, [graphData]);
+  }, [adjacency, graphData]);
 
   return (
-    <section className="panel graph-panel" aria-label="知识图谱">
-      <div className="graph-toolbar">
-        <h2 className="panel-title">
+    <section className="graph-panel graph-panel-fullscreen" aria-label="知识图谱">
+      <div className="graph-stage graph-stage-fullscreen" ref={containerRef} />
+      <div className="graph-toolbar graph-floating-toolbar glass-overlay">
+        <h2 className="panel-title graph-title-light">
           <Network size={18} />
           知识图谱
         </h2>
-        <div className="legend-row" aria-label="图例">
+        <div className="legend-row legend-row-dark" aria-label="图例">
           {legendItems.map((item) => (
-            <span className="legend-item" key={item.display}>
+            <span className="legend-item" key={item.display} title={item.display}>
               <i className="legend-dot" style={{ background: item.color }} />
-              {item.display}
+              {truncate(item.display, 4)}
             </span>
           ))}
         </div>
       </div>
-      <div className="graph-stage graph-stage-g6" ref={containerRef} />
     </section>
   );
 }

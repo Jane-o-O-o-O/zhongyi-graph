@@ -1,4 +1,4 @@
-import type { GraphData } from '@antv/g6';
+import type { LinkObject, NodeObject } from '3d-force-graph';
 import type { GraphEdge, GraphNode } from '../api/types';
 import { colors } from '../theme/tokens';
 
@@ -48,11 +48,37 @@ export function truncate(label: string, maxLength = 9) {
   return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
 }
 
-export function buildG6GraphData(
+export type ForceGraphNode = NodeObject & {
+  id: string;
+  label: string;
+  name: string;
+  description: string;
+  displayLabel: string;
+  color: string;
+  highlighted: boolean;
+};
+
+export type ForceGraphLink = LinkObject<ForceGraphNode> & {
+  id: string;
+  source: string | number | ForceGraphNode;
+  target: string | number | ForceGraphNode;
+  relation: string;
+  display: string;
+  highlighted: boolean;
+  value: number;
+  evidenceIds: string[];
+};
+
+export type ForceGraphData = {
+  nodes: ForceGraphNode[];
+  links: ForceGraphLink[];
+};
+
+export function buildForceGraphData(
   nodes: GraphNode[],
   edges: GraphEdge[],
   highlightedPath: string[] = [],
-): GraphData {
+): ForceGraphData {
   const highlighted = new Set(highlightedPath);
 
   return {
@@ -60,27 +86,23 @@ export function buildG6GraphData(
       const meta = getNodeMeta(node.label);
       return {
         id: node.id,
-        type: 'circle',
-        data: {
-          name: node.name || node.label,
-          label: node.label,
-          displayLabel: meta.display,
-          description: node.description || '',
-          color: meta.color,
-        },
-        states: highlighted.has(node.id) ? ['highlighted'] : [],
+        label: node.label,
+        name: node.name || node.label,
+        description: node.description || '',
+        displayLabel: meta.display,
+        color: meta.color,
+        highlighted: highlighted.has(node.id),
       };
     }),
-    edges: edges.map((edge) => ({
+    links: edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      type: 'line',
-      data: {
-        relation: edge.relation,
-        display: edge.display || edge.relation,
-      },
-      states: highlighted.has(edge.source) && highlighted.has(edge.target) ? ['highlighted'] : [],
+      relation: edge.relation,
+      display: edge.display || edge.relation,
+      highlighted: highlighted.has(edge.source) && highlighted.has(edge.target),
+      value: highlighted.has(edge.source) && highlighted.has(edge.target) ? 4 : 1,
+      evidenceIds: edge.evidence_ids ?? [],
     })),
   };
 }

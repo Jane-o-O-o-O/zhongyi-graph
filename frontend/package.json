@@ -10,7 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@antv/g6": "^5.0.49",
+    "3d-force-graph": "^1.80.0",
     "antd": "^5.20.0",
     "axios": "^1.7.4",
     "echarts": "^5.5.1",

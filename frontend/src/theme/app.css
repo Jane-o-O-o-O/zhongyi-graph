@@ -1,6 +1,6 @@
 :root {
   color: #25251f;
-  background: #f7f2e8;
+  background: #0a1110;
   font-family:
     Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
 }
@@ -11,11 +11,12 @@
 
 body {
   margin: 0;
-  min-width: 1180px;
-  min-height: 760px;
+  min-width: 320px;
+  min-height: 720px;
   background:
-    linear-gradient(180deg, rgba(255, 250, 240, 0.92) 0%, rgba(247, 242, 232, 0.96) 58%),
-    #f7f2e8;
+    radial-gradient(circle at 50% 42%, rgba(54, 124, 115, 0.24), transparent 34%),
+    linear-gradient(135deg, #08110f 0%, #12100c 58%, #071014 100%);
+  overflow: hidden;
 }
 
 button,
@@ -25,6 +26,8 @@ textarea {
 }
 
 .app-shell {
+  position: relative;
+  z-index: 1;
   height: 100vh;
   padding: 18px 22px 22px;
   display: flex;
@@ -33,17 +36,24 @@ textarea {
   overflow: hidden;
 }
 
+.glass-overlay {
+  border: 1px solid rgba(225, 211, 187, 0.28);
+  background: rgba(255, 250, 240, 0.68);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
 .topbar {
+  position: relative;
+  z-index: 3;
   height: 78px;
   display: grid;
   grid-template-columns: 310px minmax(520px, 1fr) 244px;
   gap: 18px;
   align-items: center;
   padding: 12px 16px;
-  border: 1px solid #e1d3bb;
   border-radius: 8px;
-  background: rgba(255, 250, 240, 0.9);
-  box-shadow: 0 10px 30px rgba(84, 64, 35, 0.08);
 }
 
 .brand-title {
@@ -76,7 +86,7 @@ textarea {
   padding: 4px 8px;
   border: 1px solid #e1d3bb;
   border-radius: 999px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.68);
   white-space: nowrap;
 }
 
@@ -105,15 +115,22 @@ textarea {
 }
 
 .workbench-grid {
+  position: relative;
+  z-index: 2;
   flex: 1;
+  width: 350px;
   height: calc(100vh - 128px);
   min-height: 0;
   max-height: calc(100vh - 128px);
   display: grid;
-  grid-template-columns: 318px minmax(760px, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: stretch;
   overflow: hidden;
+}
+
+.overlay-workbench {
+  pointer-events: none;
 }
 
 .side-column {
@@ -124,10 +141,7 @@ textarea {
 }
 
 .panel {
-  border: 1px solid #e1d3bb;
   border-radius: 8px;
-  background: rgba(255, 250, 240, 0.94);
-  box-shadow: 0 10px 30px rgba(84, 64, 35, 0.08);
 }
 
 .panel-header {
@@ -155,6 +169,7 @@ textarea {
 }
 
 .answer-panel {
+  pointer-events: auto;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -265,9 +280,10 @@ textarea {
 }
 
 .graph-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
@@ -277,7 +293,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e1d3bb;
+  border-bottom: 1px solid rgba(225, 211, 187, 0.2);
 }
 
 .graph-stage {
@@ -292,14 +308,44 @@ textarea {
   background-size: 28px 28px;
 }
 
-.graph-stage-g6 {
+.graph-stage-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   width: 100%;
+  height: 100%;
   overflow: hidden;
-  cursor: grab;
+  cursor: move;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(54, 124, 115, 0.22), transparent 30%),
+    radial-gradient(circle at 26% 26%, rgba(157, 51, 39, 0.16), transparent 20%),
+    radial-gradient(circle at 78% 62%, rgba(184, 137, 59, 0.17), transparent 24%),
+    linear-gradient(rgba(225, 211, 187, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(225, 211, 187, 0.035) 1px, transparent 1px),
+    #08110f;
+  background-size: auto, auto, auto, 42px 42px, 42px 42px, auto;
 }
 
-.graph-stage-g6:active {
+.graph-stage-fullscreen:active {
   cursor: grabbing;
+}
+
+.graph-floating-toolbar {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 3;
+  min-height: 48px;
+  gap: 16px;
+  border-radius: 8px;
+  border-bottom: 1px solid rgba(225, 211, 187, 0.28);
+  color: #f8f0df;
+  background: rgba(8, 17, 15, 0.58);
+  pointer-events: auto;
+}
+
+.graph-title-light {
+  color: #f8f0df;
 }
 
 .legend-row {
@@ -308,6 +354,10 @@ textarea {
   gap: 10px;
   color: #6c6759;
   font-size: 12px;
+}
+
+.legend-row-dark {
+  color: rgba(248, 240, 223, 0.82);
 }
 
 .legend-item {
@@ -400,4 +450,85 @@ textarea {
   color: #367c73;
   font-size: 12px;
   font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  body {
+    min-height: 640px;
+  }
+
+  .app-shell {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .topbar {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+    padding: 11px;
+  }
+
+  .brand-title {
+    font-size: 18px;
+  }
+
+  .brand-subtitle {
+    font-size: 11px;
+  }
+
+  .question-form {
+    grid-template-columns: minmax(0, 1fr) 82px;
+    gap: 8px;
+  }
+
+  .question-form .ant-input-affix-wrapper,
+  .question-form .ant-btn {
+    min-height: 40px;
+    height: 40px;
+  }
+
+  .topbar-status {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .status-pill {
+    min-height: 24px;
+    font-size: 11px;
+  }
+
+  .workbench-grid {
+    width: min(350px, calc(100vw - 20px));
+    height: min(32vh, calc(100vh - 210px));
+    max-height: min(32vh, calc(100vh - 210px));
+  }
+
+  .panel-header {
+    min-height: 40px;
+    padding: 10px 12px 7px;
+  }
+
+  .panel-body {
+    padding: 10px 12px 12px;
+  }
+
+  .answer-markdown {
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .graph-floating-toolbar {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    min-height: 44px;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .legend-row {
+    gap: 8px;
+    font-size: 11px;
+  }
 }

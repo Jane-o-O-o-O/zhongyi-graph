@@ -5,12 +5,34 @@ import App from '../App';
 import { submitQuestion } from '../api/client';
 import type { QueryResult } from '../api/types';
 
-vi.mock('@antv/g6', () => ({
-  Graph: vi.fn().mockImplementation(() => ({
-    destroy: vi.fn(),
-    fitCenter: vi.fn(() => Promise.resolve()),
-    render: vi.fn(() => Promise.resolve()),
-  })),
+const graphApi = {
+  graphData: vi.fn(),
+  nodeLabel: vi.fn(),
+  linkLabel: vi.fn(),
+  nodeColor: vi.fn(),
+  linkColor: vi.fn(),
+  linkDirectionalParticles: vi.fn(),
+  linkDirectionalParticleSpeed: vi.fn(),
+  linkDirectionalParticleWidth: vi.fn(),
+  linkWidth: vi.fn(),
+  onNodeHover: vi.fn(),
+  onLinkHover: vi.fn(),
+  onNodeClick: vi.fn(),
+  width: vi.fn(),
+  height: vi.fn(),
+  backgroundColor: vi.fn(),
+  showNavInfo: vi.fn(),
+  zoomToFit: vi.fn(),
+  cameraPosition: vi.fn(),
+  _destructor: vi.fn(),
+};
+
+Object.values(graphApi).forEach((fn) => {
+  fn.mockReturnValue(graphApi);
+});
+
+vi.mock('3d-force-graph', () => ({
+  default: vi.fn().mockImplementation(() => graphApi),
 }));
 
 vi.mock('../api/client', () => ({
@@ -70,11 +92,14 @@ describe('App', () => {
   });
 
   it('renders the graph-first workbench shell', () => {
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(screen.getByText('中医知识图谱智能平台')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('请输入中医问题，例如：失眠可以从哪些证候分析？')).toBeInTheDocument();
     expect(screen.getByText('知识图谱')).toBeInTheDocument();
+    expect(container.querySelector('.graph-stage-fullscreen')).toBeInTheDocument();
+    expect(container.querySelector('.topbar')).toHaveClass('glass-overlay');
+    expect(container.querySelector('.answer-panel')).toHaveClass('glass-overlay');
     expect(screen.queryByText('数据资产')).not.toBeInTheDocument();
     expect(screen.queryByText('证据链')).not.toBeInTheDocument();
     expect(screen.queryByText('来源状态')).not.toBeInTheDocument();

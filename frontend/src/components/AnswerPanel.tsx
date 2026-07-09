@@ -10,7 +10,7 @@ type AnswerPanelProps = {
 
 export function AnswerPanel({ answer, entities, intent }: AnswerPanelProps) {
   return (
-    <section className="panel answer-panel" aria-label="综合研判">
+    <section className="panel answer-panel glass-overlay" aria-label="综合研判">
       <div className="panel-header">
         <h2 className="panel-title">
           <Brain size={17} />

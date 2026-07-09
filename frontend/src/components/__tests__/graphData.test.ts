@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildG6GraphData, getNodeMeta } from '../graphData';
+import { buildForceGraphData, getNodeMeta } from '../graphData';
 import type { GraphEdge, GraphNode } from '../../api/types';
 
 describe('graphData', () => {
@@ -18,25 +18,25 @@ describe('graphData', () => {
       },
     ];
 
-    const data = buildG6GraphData(nodes, edges, ['symptom:失眠', 'formula:归脾汤']);
+    const data = buildForceGraphData(nodes, edges, ['symptom:失眠', 'formula:归脾汤']);
 
     expect(data.nodes).toHaveLength(2);
     expect(data.nodes?.[0]).toMatchObject({
       id: 'symptom:失眠',
-      states: ['highlighted'],
-      data: {
-        displayLabel: '症状',
-        name: '失眠',
-      },
+      label: 'Symptom',
+      displayLabel: '症状',
+      name: '失眠',
+      color: expect.any(String),
+      highlighted: true,
     });
-    expect(data.edges?.[0]).toMatchObject({
+    expect(data.links?.[0]).toMatchObject({
       id: 'edge:1',
       source: 'symptom:失眠',
       target: 'formula:归脾汤',
-      states: ['highlighted'],
-      data: {
-        display: '推荐方剂',
-      },
+      relation: 'RECOMMENDS_FORMULA',
+      display: '推荐方剂',
+      highlighted: true,
+      value: 4,
     });
   });
 

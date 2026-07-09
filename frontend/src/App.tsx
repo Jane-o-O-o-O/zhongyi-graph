@@ -212,10 +212,16 @@ export default function App() {
   return (
     <ConfigProvider theme={theme}>
       <main className="app-shell">
-        <header className="topbar">
+        <GraphCanvas
+          nodes={result.graphNodes}
+          edges={result.graphEdges}
+          highlightedPath={result.highlightedPath}
+        />
+
+        <header className="topbar glass-overlay">
           <div>
             <h1 className="brand-title">中医知识图谱智能平台</h1>
-            <div className="brand-subtitle">典籍知识库 · 图谱推理 · 证据追溯</div>
+            <div className="brand-subtitle">典籍知识库 · 3D 图谱推理 · 证据追溯</div>
           </div>
           <QuestionInput value={question} loading={loading} onChange={setQuestion} onSubmit={handleSubmit} />
           <div className="topbar-status" aria-label="平台状态">
@@ -230,16 +236,10 @@ export default function App() {
           </div>
         </header>
 
-        <section className="workbench-grid">
+        <section className="workbench-grid overlay-workbench">
           <aside className="side-column">
             <AnswerPanel answer={result.answer} entities={result.entities} intent={result.intent} />
           </aside>
-
-          <GraphCanvas
-            nodes={result.graphNodes}
-            edges={result.graphEdges}
-            highlightedPath={result.highlightedPath}
-          />
         </section>
       </main>
     </ConfigProvider>
