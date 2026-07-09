@@ -144,6 +144,8 @@ const initialResult: QueryResult = {
   ],
 };
 
+const HOME_GRAPH_LIMIT = 1500;
+
 function fallbackResult(question: string, previous: QueryResult): QueryResult {
   return {
     ...previous,
@@ -197,7 +199,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    loadGraphOverview(3000)
+    loadGraphOverview(HOME_GRAPH_LIMIT)
       .then((overview) => {
         if (cancelled || submittedRef.current) {
           return;

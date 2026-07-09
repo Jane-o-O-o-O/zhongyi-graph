@@ -30,16 +30,6 @@ type DemoGraphApi = ForceGraph3DInstance<ForceGraphNode, ForceGraphLink> & {
   showPointerCursor(accessor: (obj: ForceGraphNode | ForceGraphLink) => boolean): DemoGraphApi;
 };
 
-type GraphLinkForce = {
-  distance(distance: number): GraphLinkForce;
-  strength(strength: number): GraphLinkForce;
-  iterations(iterations: number): GraphLinkForce;
-};
-
-type GraphChargeForce = {
-  strength(strength: number): GraphChargeForce;
-};
-
 const TcmForceGraph3D = ForceGraph3D as unknown as {
   new (
     element: HTMLElement,
@@ -63,14 +53,14 @@ function linkTooltip(link: ForceGraphLink) {
   return `${link.display || link.relation}`;
 }
 
-function createNodeNameSprite(node: ForceGraphNode, compact = false) {
-  const label = truncate(node.name || node.id, compact ? 7 : 10);
+function createNodeNameSprite(node: ForceGraphNode) {
+  const label = truncate(node.name || node.id, 10);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-  const fontSize = compact ? 15 : 24;
-  const paddingX = compact ? 5 : 12;
-  const paddingY = compact ? 3 : 6;
+  const fontSize = 24;
+  const paddingX = 12;
+  const paddingY = 6;
 
   if (!context) {
     return new Sprite();
@@ -91,13 +81,13 @@ function createNodeNameSprite(node: ForceGraphNode, compact = false) {
   context.textBaseline = 'middle';
   context.fillStyle = 'rgba(3, 8, 13, 0.34)';
   context.strokeStyle = node.highlighted ? 'rgba(255, 118, 94, 0.64)' : 'rgba(104, 247, 215, 0.2)';
-  context.lineWidth = compact ? 0.9 : 1.4;
+  context.lineWidth = 1.4;
   context.beginPath();
-  context.roundRect(1, 1, width - 2, height - 2, compact ? 7 : 12);
+  context.roundRect(1, 1, width - 2, height - 2, 12);
   context.fill();
   context.stroke();
   context.shadowColor = node.highlighted ? 'rgba(255, 118, 94, 0.76)' : 'rgba(104, 247, 215, 0.62)';
-  context.shadowBlur = compact ? 5 : 10;
+  context.shadowBlur = 10;
   context.fillStyle = '#f6fff9';
   context.fillText(label, width / 2, height / 2);
 
@@ -109,9 +99,9 @@ function createNodeNameSprite(node: ForceGraphNode, compact = false) {
     depthWrite: false,
   });
   const sprite = new Sprite(material);
-  const scale = compact ? (node.highlighted ? 3.2 : 2.6) : (node.highlighted ? 7.8 : 6.8);
+  const scale = node.highlighted ? 7.8 : 6.8;
   sprite.scale.set((width / height) * scale, scale, 1);
-  sprite.position.y = compact ? (node.highlighted ? 4.4 : 3.6) : (node.highlighted ? 9.2 : 8);
+  sprite.position.y = node.highlighted ? 9.2 : 8;
   return sprite;
 }
 
@@ -120,24 +110,6 @@ function graphSize(container: HTMLDivElement) {
     width: Math.max(container.clientWidth || window.innerWidth || 1180, 320),
     height: Math.max(container.clientHeight || window.innerHeight || 760, 320),
   };
-}
-
-function configureLayoutForces(graph: DemoGraphApi, nodeCount: number) {
-  const overviewMode = nodeCount > 900;
-  graph
-    .warmupTicks(overviewMode ? 90 : 45)
-    .cooldownTicks(overviewMode ? 260 : 180)
-    .d3AlphaDecay(overviewMode ? 0.018 : 0.022)
-    .d3VelocityDecay(overviewMode ? 0.4 : 0.36);
-
-  const linkForce = graph.d3Force('link') as GraphLinkForce | undefined;
-  linkForce
-    ?.distance(overviewMode ? 22 : 28)
-    .strength(overviewMode ? 0.62 : 0.48)
-    .iterations(overviewMode ? 2 : 1);
-
-  const chargeForce = graph.d3Force('charge') as GraphChargeForce | undefined;
-  chargeForce?.strength(overviewMode ? -22 : -42);
 }
 
 export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasProps) {
@@ -177,15 +149,14 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
     if (!container) {
       return undefined;
     }
-    const overviewMode = graphData.nodes.length > 900;
 
     const graph = new TcmForceGraph3D(container, { controlType: 'orbit' })
       .backgroundColor('rgba(0,0,0,0)')
       .showNavInfo(false)
       .graphData(graphData)
-      .nodeRelSize(overviewMode ? 4.8 : 7)
-      .nodeOpacity(overviewMode ? 0.84 : 0.92)
-      .nodeThreeObject((node) => createNodeNameSprite(node, overviewMode))
+      .nodeRelSize(7)
+      .nodeOpacity(0.92)
+      .nodeThreeObject(createNodeNameSprite)
       .nodeThreeObjectExtend(true)
       .linkOpacity(0.34)
       .linkHoverPrecision(6)
@@ -255,7 +226,6 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
         graph.cameraPosition(position, { x, y, z }, 1200);
       });
 
-    configureLayoutForces(graph, graphData.nodes.length);
     graphRef.current = graph;
 
     const applySize = () => {
@@ -265,11 +235,7 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
     applySize();
 
     const fitTimer = window.setTimeout(() => {
-      graph.zoomToFit(
-        900,
-        overviewMode ? 90 : 80,
-        (node) => !overviewMode || (adjacency.linksByNode.get(node.id)?.length ?? 0) > 0,
-      );
+      graph.zoomToFit(900, 80);
     }, 360);
 
     let resizeObserver: ResizeObserver | undefined;
