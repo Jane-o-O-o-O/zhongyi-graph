@@ -24,6 +24,7 @@ class KnowledgePublisher:
             for bundle in bundles
             for chunk in bundle.chunks
         }
+        unit_chunk_lookup = _unit_chunk_lookup(bundles)
 
         for bundle in bundles:
             for entity in bundle.entities:
@@ -36,9 +37,12 @@ class KnowledgePublisher:
                 )
 
             for relation in bundle.relations:
-                evidence_ids = [
-                    _evidence_id(chunk_id) for chunk_id in relation.evidence_chunk_ids
-                ]
+                evidence_chunk_ids = _resolve_evidence_chunk_ids(
+                    relation.evidence_chunk_ids,
+                    unit_chunk_lookup,
+                    chunk_lookup,
+                )
+                evidence_ids = [_evidence_id(chunk_id) for chunk_id in evidence_chunk_ids]
                 edge_id = _edge_id(relation.relation_id)
                 edges[edge_id] = GraphEdge(
                     id=edge_id,
@@ -48,7 +52,7 @@ class KnowledgePublisher:
                     display=relation.display,
                     evidence_ids=evidence_ids,
                 )
-                for chunk_id in relation.evidence_chunk_ids:
+                for chunk_id in evidence_chunk_ids:
                     source, chunk = chunk_lookup[chunk_id]
                     evidence[_evidence_id(chunk_id)] = EvidenceCard(
                         id=_evidence_id(chunk_id),
@@ -107,3 +111,40 @@ def _edge_id(relation_id: str) -> str:
 
 def _evidence_id(chunk_id: str) -> str:
     return chunk_id.replace("chunk:", "evidence:", 1)
+
+
+def _unit_chunk_lookup(bundles: list[KnowledgeBundle]) -> dict[str, list[str]]:
+    lookup: dict[str, list[str]] = {}
+    for bundle in bundles:
+        for chunk in bundle.chunks:
+            if not chunk.parent_unit_id:
+                continue
+            lookup.setdefault(chunk.parent_unit_id, []).append(chunk.chunk_id)
+    for chunk_ids in lookup.values():
+        chunk_ids.sort()
+    return lookup
+
+
+def _resolve_evidence_chunk_ids(
+    evidence_ids: list[str],
+    unit_chunk_lookup: dict[str, list[str]],
+    chunk_lookup: dict,
+) -> list[str]:
+    resolved: list[str] = []
+    for evidence_id in evidence_ids:
+        if evidence_id in chunk_lookup:
+            resolved.append(evidence_id)
+            continue
+        resolved.extend(unit_chunk_lookup.get(evidence_id, [])[:3])
+    return _unique(resolved)
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result

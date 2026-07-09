@@ -6,6 +6,7 @@ from app.services.graph_service import GraphService
 from app.services.hybrid_retriever import HybridRetriever
 from app.services.llm import LlmClient
 from app.services.model_clients import EmbeddingClient, RerankClient, StructuredExtractionClient
+from app.services.neo4j_graph_loader import graph_service_from_neo4j
 from app.services.vector_service import VectorIndexService, build_vector_payloads
 from app.services.knowledge_publisher import PublishedKnowledgeArtifact
 from app.services.chunk_retriever import ChunkRetriever
@@ -21,6 +22,8 @@ class QuestionService:
         hybrid_retriever: HybridRetriever,
         chunk_retriever: ChunkRetriever | None = None,
         query_extractor=None,
+        ragflow_retrieval_service=None,
+        retrieval_engine: str = "legacy",
     ):
         self.graph_service = graph_service
         self.evidence_service = evidence_service
@@ -29,6 +32,8 @@ class QuestionService:
         self.hybrid_retriever = hybrid_retriever
         self.chunk_retriever = chunk_retriever
         self.query_extractor = query_extractor
+        self.ragflow_retrieval_service = ragflow_retrieval_service
+        self.retrieval_engine = retrieval_engine
 
     @classmethod
     def demo(cls) -> "QuestionService":
@@ -63,6 +68,9 @@ class QuestionService:
         rerank_model: str,
         qdrant_url: str,
         qdrant_collection: str,
+        neo4j_uri: str = "",
+        neo4j_user: str = "",
+        neo4j_password: str = "",
     ) -> "QuestionService":
         if llm_api_key and llm_api_key != "replace-with-your-key":
             llm_client = LlmClient(
@@ -85,7 +93,11 @@ class QuestionService:
             embedding_client = EmbeddingClient.demo()
             rerank_client = RerankClient.demo()
 
-        graph_service = GraphService.demo()
+        graph_service = _load_graph_service(
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+        )
         evidence_service = EvidenceService.demo()
         vector_index = VectorIndexService(
             embedding_client=embedding_client,
@@ -118,6 +130,8 @@ class QuestionService:
         self.vector_index._vectors = None
 
     def answer(self, question: str) -> QueryResponse:
+        if self.retrieval_engine == "ragflow_compat" and self.ragflow_retrieval_service:
+            return self.ragflow_retrieval_service.answer(question)
         terms = self._extract_terms(question)
         retrieval = self.hybrid_retriever.retrieve(question=question, terms=terms, top_k=8)
         nodes = retrieval.nodes
@@ -168,6 +182,7 @@ class QuestionService:
         return cards
 
     def _extract_terms(self, question: str) -> list[str]:
+        literal_terms = _literal_query_terms(question)
         if self.query_extractor:
             try:
                 extracted = self.query_extractor.extract_query(question)
@@ -181,13 +196,16 @@ class QuestionService:
                     for entity in extracted.get("expanded_entities", [])
                     if str(entity).strip()
                 ]
-                terms = _unique_terms(entities + expanded_entities)
+                terms = _unique_terms(
+                    _normalize_query_term(entity)
+                    for entity in literal_terms + entities + expanded_entities
+                )
                 if terms:
                     return terms
             except Exception:
                 pass
         compact = "".join(question.split()).strip("？?。！!，,；;")
-        return [compact] if compact else []
+        return _unique_terms(literal_terms + [_normalize_query_term(compact)])
 
     def _infer_intent(self, question: str) -> str:
         if any(term in question for term in ["汤", "方", "方剂"]):
@@ -211,7 +229,92 @@ def _unique_terms(terms: list[str]) -> list[str]:
     seen: set[str] = set()
     unique = []
     for term in terms:
+        if not term:
+            continue
         if term not in seen:
             seen.add(term)
             unique.append(term)
     return unique
+
+
+def _normalize_query_term(term: str) -> str:
+    normalized = "".join(term.split()).strip("？?。！!，,；;")
+    suffixes = [
+        "有哪些组成",
+        "有什么组成",
+        "的组成是什么",
+        "组成是什么",
+        "有哪些主治",
+        "有什么主治",
+        "的主治是什么",
+        "主治是什么",
+        "有哪些功效",
+        "有什么功效",
+        "的功效是什么",
+        "功效是什么",
+        "有什么作用",
+        "的作用是什么",
+        "作用是什么",
+        "有哪些",
+        "是什么",
+        "怎么处理",
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if normalized.endswith(suffix) and len(normalized) > len(suffix):
+                normalized = normalized[: -len(suffix)]
+                changed = True
+    return normalized
+
+
+def _literal_query_terms(question: str) -> list[str]:
+    compact = "".join(question.split()).strip("？?。！!，,；;")
+    stop_words = [
+        "有哪些组成",
+        "有什么组成",
+        "的组成是什么",
+        "组成是什么",
+        "有哪些主治",
+        "有什么主治",
+        "的主治是什么",
+        "主治是什么",
+        "有哪些功效",
+        "有什么功效",
+        "的功效是什么",
+        "功效是什么",
+        "有什么作用",
+        "的作用是什么",
+        "作用是什么",
+        "里面",
+        "有哪些",
+        "是什么",
+        "怎么处理",
+        "适合什么情况",
+    ]
+    literal = compact
+    for stop_word in stop_words:
+        if stop_word in literal:
+            literal = literal.split(stop_word, 1)[0]
+    literal = _normalize_query_term(literal)
+    formula_suffixes = ("汤", "散", "丸", "膏", "方", "饮", "丹", "煎")
+    if literal.endswith(formula_suffixes) and len(literal) >= 2:
+        return [literal]
+    return []
+
+
+def _load_graph_service(
+    *,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+) -> GraphService:
+    if neo4j_uri and neo4j_user and neo4j_password:
+        try:
+            graph_service = graph_service_from_neo4j(neo4j_uri, neo4j_user, neo4j_password)
+            if graph_service.nodes:
+                return graph_service
+        except Exception:
+            pass
+    return GraphService.demo()

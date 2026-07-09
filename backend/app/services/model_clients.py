@@ -114,25 +114,63 @@ class StructuredExtractionClient:
         focused_text = _focus_text_window(text=text, hints=hints or [])
         return self._chat_json(
             system=(
-                "你是中医知识图谱实体关系抽取器。"
+                "/no_think 你是中医知识图谱实体关系抽取器。"
                 "从给定文本中抽取明确出现的实体和关系，只输出 JSON。"
                 "只要文本中出现症状、证候、治法、方剂、中药，就必须抽取。"
                 "关系方向遵循：症状->证候 用 MANIFESTS_AS；证候->治法 用 RECOMMENDS_TREATMENT；"
                 "治法->方剂 用 RECOMMENDS_FORMULA；方剂->中药 用 COMPOSED_OF；方剂或治法->症状/证候 用 TREATS。"
+                "凡出现症状、证候、病机、病名、治法、方剂、中药、舌象、脉象、诊法、体征、功效、主治，均要抽取。"
                 "实体 label 只能使用 Symptom、Syndrome、Treatment、Formula、Herb、Indication、Function。"
+                "舌象、脉象、诊法、体征归为 Indication；病机、病因、病名、证候归为 Syndrome；功效归为 Function。"
                 "关系 relation 使用英文大写枚举，例如 MANIFESTS_AS、RECOMMENDS_TREATMENT、"
                 "RECOMMENDS_FORMULA、COMPOSED_OF、TREATS、RELATED_TO。"
                 "输出格式：{\"entities\":[{\"name\":\"\",\"label\":\"Symptom\",\"confidence\":0.9}],"
                 "\"relations\":[{\"source\":\"\",\"target\":\"\",\"relation\":\"RELATED_TO\","
                 "\"display\":\"相关\",\"confidence\":0.8}]}"
             ),
-            user=f"文本：{focused_text}",
+            user=f"/no_think 文本：{focused_text}",
         )
+
+    def extract_chunks_batch(self, items: Sequence[dict]) -> dict:
+        normalized_items = [
+            {
+                "unit_id": str(item.get("unit_id", "")).strip(),
+                "text": str(item.get("text", "")).strip(),
+            }
+            for item in items
+            if str(item.get("unit_id", "")).strip() and str(item.get("text", "")).strip()
+        ]
+        payload = self._chat_json(
+            system=(
+                "/no_think 你是中医知识图谱实体关系批量抽取器。"
+                "输入是多个独立的 extraction unit，每个都有 unit_id 和 text。"
+                "必须分别抽取每个 unit 内明确出现的实体和关系，只输出 JSON。"
+                "无论输入有几个 unit，顶层 JSON 都必须只有 items 字段，items 必须是数组。"
+                "禁止把 unit_id、entities、relations 直接放在顶层。"
+                "不要跨 unit 建关系，不要把一个 unit 的实体放到另一个 unit。"
+                "凡出现症状、证候、病机、病名、治法、方剂、中药、舌象、脉象、诊法、体征、功效、主治，均要抽取。"
+                "每个非空 unit 尽量抽取 3-12 个最核心实体；若文本是总论、诊法、分类、理论，也要抽取核心概念和分类名。"
+                "如果关系不明显，可以 relations 为空，但 entities 不应为空。"
+                "实体 label 只能使用 Symptom、Syndrome、Treatment、Formula、Herb、Indication、Function。"
+                "舌象、脉象、诊法、体征归为 Indication；病机、病因、病名、证候归为 Syndrome；功效归为 Function。"
+                "关系 relation 使用 MANIFESTS_AS、RECOMMENDS_TREATMENT、RECOMMENDS_FORMULA、"
+                "COMPOSED_OF、TREATS、RELATED_TO。"
+                "关系方向遵循：症状->证候，证候->治法，治法->方剂，方剂->中药，"
+                "方剂或治法->症状/证候。"
+                "输出格式必须为：{\"items\":[{\"unit_id\":\"unit:...\","
+                "\"entities\":[{\"name\":\"\",\"label\":\"Symptom\",\"confidence\":0.9}],"
+                "\"relations\":[{\"source\":\"\",\"target\":\"\",\"relation\":\"RELATED_TO\","
+                "\"display\":\"相关\",\"confidence\":0.8}]}]}。"
+                "如果某个 unit 没有可抽取内容，也要返回该 unit_id，entities 和 relations 为空数组。"
+            ),
+            user="/no_think 批量文本：\n" + json.dumps(normalized_items, ensure_ascii=False),
+        )
+        return _normalize_batch_extraction_payload(payload)
 
     def extract_query(self, question: str) -> dict:
         return self._chat_json(
             system=(
-                "你是中医知识图谱查询理解器。"
+                "/no_think 你是中医知识图谱查询理解器。"
                 "从用户问题中抽取适合图谱检索的原始实体、衍生相关实体和关系意图，只输出 JSON。"
                 "entities 必须保留用户明示实体；expanded_entities 输出同义词、标准中医术语、相关脏腑、"
                 "常见相关证候或病名，用于扩大关键词检索和向量检索。"
@@ -143,21 +181,25 @@ class StructuredExtractionClient:
                 "\"relations\":[\"相关\",\"证候\"]}。"
                 "实体应保留用户原词或标准中医术语，不要编造具体结论。"
             ),
-            user=f"问题：{question}",
+            user=f"/no_think 问题：{question}",
         )
 
     def _chat_json(self, *, system: str, user: str) -> dict:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0,
+            "max_tokens": 4096,
+            "enable_thinking": False,
+            "response_format": {"type": "json_object"},
+        }
         response = self.http_client.post(
             f"{self.base_url}/chat/completions",
             headers={"Authorization": f"Bearer {self.api_key}"},
-            json={
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                "temperature": 0,
-            },
+            json=payload,
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
@@ -197,8 +239,9 @@ class _DeterministicRerankHttpClient:
 class _DeterministicExtractionHttpClient:
     def post(self, url: str, headers: dict, json: dict) -> httpx.Response:
         user = json["messages"][1]["content"]
-        if user.startswith("问题："):
-            question = user.removeprefix("问题：")
+        normalized_user = user.removeprefix("/no_think").strip()
+        if normalized_user.startswith("问题："):
+            question = normalized_user.removeprefix("问题：")
             entities = [
                 term
                 for term in [
@@ -232,7 +275,7 @@ class _DeterministicExtractionHttpClient:
                 "relations": [],
             }
         else:
-            text = user.removeprefix("文本：")
+            text = normalized_user.removeprefix("文本：")
             entities = []
             for name, label in [
                 ("头痛", "Symptom"),
@@ -355,6 +398,15 @@ def _loads_json_object(content: str) -> dict:
         stripped = stripped[start : end + 1]
     data = json.loads(stripped)
     return data if isinstance(data, dict) else {}
+
+
+def _normalize_batch_extraction_payload(payload: dict) -> dict:
+    items = payload.get("items")
+    if isinstance(items, list):
+        return {"items": [item for item in items if isinstance(item, dict)]}
+    if "unit_id" in payload and ("entities" in payload or "relations" in payload):
+        return {"items": [payload]}
+    return {"items": []}
 
 
 def _focus_text_window(text: str, hints: Sequence[str], window: int = 700) -> str:

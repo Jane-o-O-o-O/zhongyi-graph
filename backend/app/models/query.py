@@ -26,3 +26,4 @@ class QueryResponse(BaseModel):
     graph_edges: list[GraphEdge] = Field(default_factory=list)
     highlighted_path: list[str] = Field(default_factory=list)
     evidence: list[EvidenceCard] = Field(default_factory=list)
+    diagnostics: dict = Field(default_factory=dict)

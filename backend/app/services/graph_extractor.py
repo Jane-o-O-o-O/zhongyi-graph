@@ -1,3 +1,5 @@
+from typing import Any
+
 from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate
 
 
@@ -30,8 +32,8 @@ class GraphExtractor:
             entity_labels: dict[str, str] = {}
             canonical_names: dict[str, str] = {}
             for item in extracted.get("entities", []):
-                raw_name = str(item.get("name", "")).strip()
-                label = _normalize_label(str(item.get("label", "")))
+                raw_name = _first_text(item, "name", "text", "value", "entity", "entity_id")
+                label = _normalize_label(_first_text(item, "label", "type", "category"))
                 name = _canonical_name(raw_name, label)
                 if not name or not label:
                     continue
@@ -52,8 +54,8 @@ class GraphExtractor:
                 )
 
             for item in extracted.get("relations", []):
-                raw_source_name = str(item.get("source", "")).strip()
-                raw_target_name = str(item.get("target", "")).strip()
+                raw_source_name = _first_text(item, "source", "subject", "head", "from")
+                raw_target_name = _first_text(item, "target", "object", "tail", "to")
                 source_name = canonical_names.get(raw_source_name, raw_source_name)
                 target_name = canonical_names.get(raw_target_name, raw_target_name)
                 relation = _normalize_relation(str(item.get("relation", "")))
@@ -94,6 +96,17 @@ def _entity_id(label: str, name: str) -> str:
     return f"entity:{label_prefix}:{name}"
 
 
+def _first_text(item: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = item.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
 def _normalize_label(label: str) -> str:
     aliases = {
         "symptom": "Symptom",
@@ -105,10 +118,25 @@ def _normalize_label(label: str) -> str:
         "function": "Function",
         "症状": "Symptom",
         "证候": "Syndrome",
+        "病名": "Syndrome",
+        "病机": "Syndrome",
         "治法": "Treatment",
         "方剂": "Formula",
+        "药方": "Formula",
+        "处方": "Formula",
+        "medicine": "Formula",
+        "prescription": "Formula",
         "中药": "Herb",
         "药物": "Herb",
+        "药材": "Herb",
+        "herbal": "Herb",
+        "病因": "Syndrome",
+        "舌象": "Indication",
+        "脉象": "Indication",
+        "诊法": "Indication",
+        "体征": "Indication",
+        "主治": "Indication",
+        "功效": "Function",
     }
     normalized = aliases.get(label.strip(), aliases.get(label.strip().lower(), label.strip()))
     allowed = {"Symptom", "Syndrome", "Treatment", "Formula", "Herb", "Indication", "Function"}

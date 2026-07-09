@@ -13,7 +13,14 @@ from app.services.chunk_retriever import ChunkRetriever
 from app.services.question_service import QuestionService
 from app.services.graph_extractor import GraphExtractor
 from app.services.model_clients import StructuredExtractionClient
+from app.services.ragflow_compat.doc_store import RagflowDocStore, RagflowVectorSearchClient
+from app.services.ragflow_compat.fulltext import RagflowFulltextRetriever
+from app.services.ragflow_compat.kg_search import RagflowKgSearch
+from app.services.ragflow_compat.repository import RagflowRetrievalRepository
+from app.services.ragflow_compat.retrieval_service import RagflowCompatibleRetrievalService
+from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
 from pathlib import Path
+import httpx
 import tempfile
 
 router = APIRouter(prefix="/api")
@@ -26,11 +33,15 @@ question_service = QuestionService.from_settings(
     rerank_model=settings.rerank_model,
     qdrant_url=settings.qdrant_url,
     qdrant_collection=settings.qdrant_collection,
+    neo4j_uri=settings.neo4j_uri,
+    neo4j_user=settings.neo4j_user,
+    neo4j_password=settings.neo4j_password,
 )
 try:
     ingestion_repository = IngestionRepository.from_dsn(settings.postgres_dsn)
 except Exception:
     ingestion_repository = IngestionRepository.in_memory()
+ragflow_repository = RagflowRetrievalRepository(ingestion_repository.engine)
 
 try:
     object_storage = MinioObjectStorage(
@@ -81,6 +92,45 @@ question_service.chunk_retriever = ChunkRetriever(
     vector_index=question_service.vector_index,
 )
 question_service.query_extractor = structured_extractor
+ragflow_doc_store = RagflowDocStore(
+    repository=ragflow_repository,
+    embedding_client=question_service.vector_index.embedding_client,
+    vector_weight=settings.ragflow_vector_weight,
+    token_weight=settings.ragflow_token_weight,
+    vector_search_client=RagflowVectorSearchClient(
+        embedding_client=question_service.vector_index.embedding_client,
+        qdrant_url=settings.qdrant_url,
+        collection=settings.ragflow_qdrant_collection,
+    ),
+    min_vector_chunks_for_search=settings.ragflow_vector_min_indexed_chunks,
+    min_vector_kg_entities_for_search=settings.ragflow_vector_min_indexed_kg_entities,
+    min_vector_kg_relations_for_search=settings.ragflow_vector_min_indexed_kg_relations,
+    min_vector_chunk_coverage_for_search=(
+        settings.ragflow_vector_min_chunk_coverage_for_search
+    ),
+    min_vector_kg_entity_coverage_for_search=(
+        settings.ragflow_vector_min_kg_entity_coverage_for_search
+    ),
+    min_vector_kg_relation_coverage_for_search=(
+        settings.ragflow_vector_min_kg_relation_coverage_for_search
+    ),
+)
+ragflow_retrieval_service = RagflowCompatibleRetrievalService(
+    repository=ragflow_repository,
+    fulltext_retriever=RagflowFulltextRetriever(
+        doc_store=ragflow_doc_store,
+        rerank_client=question_service.hybrid_retriever.rerank_client,
+        rerank_weight=settings.ragflow_rerank_weight,
+    ),
+    kg_search=RagflowKgSearch(ragflow_doc_store),
+    llm_client=question_service.llm_client,
+    qdrant_stats_provider=lambda: _qdrant_collection_stats(
+        settings.qdrant_url,
+        settings.ragflow_qdrant_collection,
+    ),
+)
+question_service.ragflow_retrieval_service = ragflow_retrieval_service
+question_service.retrieval_engine = settings.retrieval_engine
 
 try:
     restored_artifact = ingestion_service.restore_published_artifact()
@@ -117,6 +167,44 @@ def sync_vector_index() -> dict:
         "collection": question_service.vector_index.collection,
         "documents": len(question_service.vector_index.documents),
     }
+
+
+@router.get("/retrieval/status")
+def retrieval_status() -> dict:
+    return {
+        "retrieval_engine": question_service.retrieval_engine,
+        "ragflow_compat": ragflow_retrieval_service.status(),
+    }
+
+
+def _qdrant_collection_stats(qdrant_url: str, collection: str) -> dict:
+    response = httpx.get(
+        f"{qdrant_url.rstrip('/')}/collections/{collection}",
+        timeout=5,
+    )
+    response.raise_for_status()
+    result = response.json().get("result") or {}
+    return {
+        "available": True,
+        "status": result.get("status"),
+        "points_count": int(result.get("points_count", 0)),
+        "indexed_vectors_count": int(result.get("indexed_vectors_count", 0)),
+    }
+
+
+@router.post("/retrieval/rebuild")
+def rebuild_ragflow_retrieval_index() -> dict:
+    summary = RagflowRetrievalSyncService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=ragflow_repository,
+        graph_service=question_service.graph_service,
+    ).rebuild_from_ingestion()
+    return {"status": "ok", **summary}
+
+
+@router.get("/retrieval/audit")
+def audit_ragflow_retrieval_index() -> dict:
+    return ragflow_retrieval_service.status()
 
 
 @router.post("/ingestion/sources", response_model=SourceManifest)

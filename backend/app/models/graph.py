@@ -10,12 +10,18 @@ NodeLabel = Literal[
     "Formula",
     "Prescription",
     "Herb",
+    "Dose",
     "Dosage",
     "Function",
     "Indication",
     "Channel",
     "Property",
     "Flavor",
+    "Alias",
+    "Source",
+    "DistributionArea",
+    "Meridian",
+    "Category",
     "TextSource",
     "Evidence",
     "ExternalSource",
@@ -27,7 +33,7 @@ class GraphNode(BaseModel):
     label: NodeLabel
     name: str
     description: str = ""
-    properties: dict[str, str | int | float | bool] = Field(default_factory=dict)
+    properties: dict[str, str | int | float | bool | list[str]] = Field(default_factory=dict)
 
 
 class GraphEdge(BaseModel):

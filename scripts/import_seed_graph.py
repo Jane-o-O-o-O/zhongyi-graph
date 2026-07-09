@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +25,15 @@ def build_merge_statements(graph: dict[str, Any]) -> list[tuple[str, dict[str, A
         label = validate_identifier("label", node["label"])
         statements.append(
             (
-                f"MERGE (n:{label} {{id: $id}}) SET n.name = $name, n.label = $label",
-                {"id": node["id"], "name": node["name"], "label": label},
+                f"MERGE (n:{label} {{id: $id}}) "
+                "SET n.name = $name, n.label = $label "
+                "SET n += $properties",
+                {
+                    "id": node["id"],
+                    "name": node["name"],
+                    "label": label,
+                    "properties": _node_properties(node),
+                },
             )
         )
     for edge in graph["edges"]:
@@ -39,6 +47,14 @@ def build_merge_statements(graph: dict[str, Any]) -> list[tuple[str, dict[str, A
             )
         )
     return statements
+
+
+def _node_properties(node: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in node.items()
+        if key not in {"id", "name", "label"}
+    }
 
 
 def import_graph(path: Path = DEFAULT_GRAPH_PATH) -> None:
@@ -55,5 +71,12 @@ def import_graph(path: Path = DEFAULT_GRAPH_PATH) -> None:
         driver.close()
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Import a graph artifact into Neo4j.")
+    parser.add_argument("--graph", type=Path, default=DEFAULT_GRAPH_PATH)
+    args = parser.parse_args()
+    import_graph(args.graph)
+
+
 if __name__ == "__main__":
-    import_graph()
+    main()

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from uuid import uuid4
 
+from collections.abc import Iterable
+
 from sqlalchemy import (
     JSON,
     Column,
@@ -17,6 +19,7 @@ from sqlalchemy import (
     inspect,
     select,
     text,
+    func,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
@@ -25,6 +28,7 @@ from app.models.ingestion import (
     DocumentChunk,
     DocumentPage,
     EntityCandidate,
+    ExtractionUnit,
     KnowledgeBundle,
     PublishBatch,
     RelationCandidate,
@@ -55,6 +59,23 @@ pages_table = Table(
     Column("layout_json", JSON, nullable=False, default=dict),
 )
 
+extraction_units_table = Table(
+    "extraction_units",
+    metadata,
+    Column("unit_id", String, primary_key=True),
+    Column("source_id", String, nullable=False, index=True),
+    Column("page_id", String, nullable=False),
+    Column("unit_index", Integer, nullable=False),
+    Column("title", String, nullable=False, default=""),
+    Column("content", Text, nullable=False),
+    Column("unit_type", String, nullable=False, default="text"),
+    Column("section_path", JSON, nullable=False, default=list),
+    Column("token_count", Integer, nullable=False, default=0),
+    Column("char_start", Integer, nullable=False, default=0),
+    Column("char_end", Integer, nullable=False, default=0),
+    Column("metadata", JSON, nullable=False, default=dict),
+)
+
 chunks_table = Table(
     "document_chunks",
     metadata,
@@ -63,6 +84,8 @@ chunks_table = Table(
     Column("page_id", String, nullable=False),
     Column("chunk_index", Integer, nullable=False),
     Column("content", Text, nullable=False),
+    Column("parent_unit_id", String, nullable=False, default=""),
+    Column("unit_index", Integer, nullable=False, default=0),
     Column("content_type", String, nullable=False),
     Column("section_title", String, nullable=False, default=""),
     Column("token_count", Integer, nullable=False, default=0),
@@ -112,6 +135,7 @@ class IngestionRepository:
         self.engine = engine
         _migrate_candidate_primary_keys(engine)
         metadata.create_all(engine)
+        _migrate_structural_chunking_columns(engine)
 
     @classmethod
     def in_memory(cls) -> "IngestionRepository":
@@ -139,11 +163,26 @@ class IngestionRepository:
         pages: list[DocumentPage],
         chunks: list[DocumentChunk],
     ) -> None:
+        fallback_units = _fallback_units_from_chunks(source_id, pages, chunks)
+        self.replace_pages_units_and_chunks(source_id, pages, fallback_units, chunks)
+
+    def replace_pages_units_and_chunks(
+        self,
+        source_id: str,
+        pages: list[DocumentPage],
+        units: list[ExtractionUnit],
+        chunks: list[DocumentChunk],
+    ) -> None:
         with self.engine.begin() as connection:
             connection.execute(delete(pages_table).where(pages_table.c.source_id == source_id))
+            connection.execute(
+                delete(extraction_units_table).where(extraction_units_table.c.source_id == source_id)
+            )
             connection.execute(delete(chunks_table).where(chunks_table.c.source_id == source_id))
             if pages:
                 connection.execute(pages_table.insert(), [page.model_dump() for page in pages])
+            if units:
+                connection.execute(extraction_units_table.insert(), [_unit_row(unit) for unit in units])
             if chunks:
                 connection.execute(chunks_table.insert(), [_chunk_row(chunk) for chunk in chunks])
 
@@ -194,6 +233,94 @@ class IngestionRepository:
         with self.engine.begin() as connection:
             return [_chunk_from_row(row._mapping) for row in connection.execute(statement)]
 
+    def iter_chunk_batches(self, batch_size: int = 1000) -> Iterable[list[DocumentChunk]]:
+        offset = 0
+        while True:
+            statement = (
+                select(chunks_table)
+                .order_by(chunks_table.c.source_id, chunks_table.c.chunk_index, chunks_table.c.chunk_id)
+                .limit(batch_size)
+                .offset(offset)
+            )
+            with self.engine.begin() as connection:
+                batch = [_chunk_from_row(row._mapping) for row in connection.execute(statement)]
+            if not batch:
+                break
+            yield batch
+            offset += batch_size
+
+    def chunk_counts_by_source(self, *, min_tokens: int, max_tokens: int) -> dict[str, tuple[int, int]]:
+        with self.engine.begin() as connection:
+            rows = connection.execute(
+                select(
+                    chunks_table.c.source_id,
+                    func.count().label("chunk_count"),
+                    func.sum(
+                        (
+                            chunks_table.c.token_count.between(min_tokens, max_tokens)
+                            & (chunks_table.c.content != "")
+                        ).cast(Integer)
+                    ).label("eligible_chunk_count"),
+                )
+                .group_by(chunks_table.c.source_id)
+            )
+            return {
+                row.source_id: (
+                    int(row.chunk_count or 0),
+                    int(row.eligible_chunk_count or 0),
+                )
+                for row in rows
+            }
+
+    def list_sources(self) -> list[SourceManifest]:
+        with self.engine.begin() as connection:
+            return [
+                SourceManifest(**dict(row._mapping))
+                for row in connection.execute(select(sources_table).order_by(sources_table.c.source_id))
+            ]
+
+    def list_pages(self) -> list[DocumentPage]:
+        with self.engine.begin() as connection:
+            return [
+                DocumentPage(**dict(row._mapping))
+                for row in connection.execute(
+                    select(pages_table).order_by(pages_table.c.source_id, pages_table.c.page_number)
+                )
+            ]
+
+    def list_entities(self) -> list[tuple[str, EntityCandidate]]:
+        with self.engine.begin() as connection:
+            return [
+                (
+                    row._mapping["source_id"],
+                    EntityCandidate(**_candidate_mapping(row._mapping, "source_chunk_ids")),
+                )
+                for row in connection.execute(
+                    select(entities_table).order_by(
+                        entities_table.c.source_id,
+                        entities_table.c.name,
+                        entities_table.c.entity_id,
+                    )
+                )
+            ]
+
+    def list_relations(self) -> list[tuple[str, RelationCandidate]]:
+        with self.engine.begin() as connection:
+            return [
+                (
+                    row._mapping["source_id"],
+                    RelationCandidate(**_candidate_mapping(row._mapping, "evidence_chunk_ids")),
+                )
+                for row in connection.execute(
+                    select(relations_table).order_by(
+                        relations_table.c.source_id,
+                        relations_table.c.source_entity_id,
+                        relations_table.c.target_entity_id,
+                        relations_table.c.relation_id,
+                    )
+                )
+            ]
+
     def get_chunk(self, chunk_id: str) -> DocumentChunk | None:
         with self.engine.begin() as connection:
             row = connection.execute(
@@ -235,6 +362,14 @@ class IngestionRepository:
                     .order_by(chunks_table.c.chunk_index)
                 )
             ]
+            units = [
+                _unit_from_row(row._mapping)
+                for row in connection.execute(
+                    select(extraction_units_table)
+                    .where(extraction_units_table.c.source_id == source_id)
+                    .order_by(extraction_units_table.c.unit_index)
+                )
+            ]
             entities = [
                 EntityCandidate(**_candidate_mapping(row._mapping, "source_chunk_ids"))
                 for row in connection.execute(
@@ -250,6 +385,7 @@ class IngestionRepository:
         return KnowledgeBundle(
             source=SourceManifest(**dict(source_row._mapping)),
             pages=pages,
+            extraction_units=units,
             chunks=chunks,
             entities=entities,
             relations=relations,
@@ -281,10 +417,24 @@ def _chunk_row(chunk: DocumentChunk) -> dict:
     return data
 
 
+def _unit_row(unit: ExtractionUnit) -> dict:
+    data = unit.model_dump()
+    data["section_path"] = _jsonable(data["section_path"])
+    data["metadata"] = _jsonable(data["metadata"])
+    return data
+
+
 def _chunk_from_row(row) -> DocumentChunk:
     data = dict(row)
     data["metadata"] = _ensure_json(data.get("metadata", {}))
     return DocumentChunk(**data)
+
+
+def _unit_from_row(row) -> ExtractionUnit:
+    data = dict(row)
+    data["section_path"] = _ensure_json(data.get("section_path", []))
+    data["metadata"] = _ensure_json(data.get("metadata", {}))
+    return ExtractionUnit(**data)
 
 
 def _candidate_mapping(row, json_field: str) -> dict:
@@ -357,3 +507,62 @@ def _migrate_candidate_primary_keys(engine: Engine) -> None:
                 connection.execute(text(f"ALTER TABLE {table_name} ADD PRIMARY KEY ({', '.join(expected_columns)})"))
             continue
         metadata.tables[table_name].drop(engine, checkfirst=True)
+
+
+def _migrate_structural_chunking_columns(engine: Engine) -> None:
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    if "document_chunks" not in existing_tables:
+        return
+    columns = {column["name"] for column in inspector.get_columns("document_chunks")}
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as connection:
+            if "parent_unit_id" not in columns:
+                connection.execute(
+                    text("ALTER TABLE document_chunks ADD COLUMN parent_unit_id VARCHAR NOT NULL DEFAULT ''")
+                )
+            if "unit_index" not in columns:
+                connection.execute(
+                    text("ALTER TABLE document_chunks ADD COLUMN unit_index INTEGER NOT NULL DEFAULT 0")
+                )
+        return
+    with engine.begin() as connection:
+        if "parent_unit_id" not in columns:
+            connection.execute(
+                text("ALTER TABLE document_chunks ADD COLUMN parent_unit_id VARCHAR NOT NULL DEFAULT ''")
+            )
+        if "unit_index" not in columns:
+            connection.execute(
+                text("ALTER TABLE document_chunks ADD COLUMN unit_index INTEGER NOT NULL DEFAULT 0")
+            )
+
+
+def _fallback_units_from_chunks(
+    source_id: str,
+    pages: list[DocumentPage],
+    chunks: list[DocumentChunk],
+) -> list[ExtractionUnit]:
+    page_id = pages[0].page_id if pages else (chunks[0].page_id if chunks else f"page:{source_id}:1")
+    units: list[ExtractionUnit] = []
+    for index, chunk in enumerate(chunks, start=1):
+        if chunk.parent_unit_id:
+            continue
+        units.append(
+            ExtractionUnit(
+                unit_id=f"unit:{source_id}:{index:04d}",
+                source_id=source_id,
+                page_id=page_id,
+                unit_index=index,
+                title=chunk.section_title,
+                content=chunk.content,
+                unit_type=chunk.content_type,
+                section_path=chunk.metadata.get("section_path", []) if chunk.metadata else [],
+                token_count=chunk.token_count,
+                char_start=chunk.char_start,
+                char_end=chunk.char_end,
+                metadata={"generated_from_legacy_chunk": chunk.chunk_id},
+            )
+        )
+        chunk.parent_unit_id = units[-1].unit_id
+        chunk.unit_index = index
+    return units

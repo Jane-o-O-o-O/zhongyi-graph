@@ -1,8 +1,59 @@
 from app.services.question_service import QuestionService
 from app.models.ingestion import DocumentChunk
+from app.models.graph import GraphNode
 
 
 def test_question_service_uses_real_llm_client_when_api_key_is_configured():
+    class FakeGraphService:
+        @classmethod
+        def demo(cls):
+            return "demo-graph"
+
+    class FakeHybridRetriever:
+        def __init__(self, graph_service, vector_index, rerank_client):
+            assert graph_service == "demo-graph"
+
+    from app.services import question_service as question_service_module
+
+    original_graph_service = question_service_module.GraphService
+    original_hybrid_retriever = question_service_module.HybridRetriever
+    question_service_module.GraphService = FakeGraphService
+    question_service_module.HybridRetriever = FakeHybridRetriever
+    try:
+        service = QuestionService.from_settings(
+            llm_base_url="https://llm.example/v1",
+            llm_api_key="secret-key",
+            llm_model="demo-model",
+            embedding_model="Qwen/Qwen3-Embedding-8B",
+            rerank_model="Qwen/Qwen3-Reranker-8B",
+            qdrant_url="http://qdrant:6333",
+            qdrant_collection="tcm_knowledge",
+        )
+    finally:
+        question_service_module.GraphService = original_graph_service
+        question_service_module.HybridRetriever = original_hybrid_retriever
+
+    assert service.llm_client.base_url == "https://llm.example/v1"
+    assert service.llm_client.api_key == "secret-key"
+    assert service.llm_client.model == "demo-model"
+    assert service.vector_index.collection == "tcm_knowledge"
+
+
+def test_question_service_from_settings_uses_neo4j_graph_when_available(monkeypatch):
+    captured = {}
+
+    class FakeHybridRetriever:
+        def __init__(self, graph_service, vector_index, rerank_client):
+            captured["graph_service"] = graph_service
+
+    loaded_graph = type("LoadedGraph", (), {"nodes": [object()], "edges": []})()
+
+    monkeypatch.setattr(
+        "app.services.question_service.graph_service_from_neo4j",
+        lambda uri, user, password: loaded_graph,
+    )
+    monkeypatch.setattr("app.services.question_service.HybridRetriever", FakeHybridRetriever)
+
     service = QuestionService.from_settings(
         llm_base_url="https://llm.example/v1",
         llm_api_key="secret-key",
@@ -11,12 +62,13 @@ def test_question_service_uses_real_llm_client_when_api_key_is_configured():
         rerank_model="Qwen/Qwen3-Reranker-8B",
         qdrant_url="http://qdrant:6333",
         qdrant_collection="tcm_knowledge",
+        neo4j_uri="bolt://neo4j:7687",
+        neo4j_user="neo4j",
+        neo4j_password="secret",
     )
 
-    assert service.llm_client.base_url == "https://llm.example/v1"
-    assert service.llm_client.api_key == "secret-key"
-    assert service.llm_client.model == "demo-model"
-    assert service.vector_index.collection == "tcm_knowledge"
+    assert service.graph_service is loaded_graph
+    assert captured["graph_service"] is loaded_graph
 
 
 def test_question_service_keeps_deterministic_client_without_api_key():
@@ -88,6 +140,44 @@ def test_question_service_extracts_core_graph_terms_from_question():
 
     assert service._extract_terms("心脾两虚怎么处理？") == ["心脾两虚"]
     assert service._extract_terms("归脾汤里面党参有什么作用？") == ["归脾汤", "党参"]
+
+
+def test_question_service_cleans_formula_composition_question_when_extractor_is_too_broad():
+    class BroadQueryExtractor:
+        def extract_query(self, question):
+            return {"entities": ["鳖甲汤有哪些组成"], "expanded_entities": [], "relations": []}
+
+    service = QuestionService.demo()
+    service.query_extractor = BroadQueryExtractor()
+
+    assert service._extract_terms("鳖甲汤有哪些组成？") == ["鳖甲汤"]
+
+
+def test_question_service_keeps_literal_formula_term_when_extractor_returns_wrong_entity():
+    class WrongQueryExtractor:
+        def extract_query(self, question):
+            return {"entities": ["小柴胡汤"], "expanded_entities": [], "relations": []}
+
+    service = QuestionService.demo()
+    service.query_extractor = WrongQueryExtractor()
+
+    assert service._extract_terms("鳖甲汤有哪些组成？") == ["鳖甲汤", "小柴胡汤"]
+
+
+def test_hybrid_retriever_prefers_earlier_literal_term_when_selecting_direct_anchor():
+    service = QuestionService.demo()
+    service.graph_service.nodes = [
+        GraphNode(id="formula:小柴胡汤", label="Formula", name="小柴胡汤"),
+        GraphNode(id="formula:鳖甲汤", label="Formula", name="鳖甲汤"),
+    ]
+
+    anchor = service.hybrid_retriever._direct_or_ranked_node(
+        "Formula",
+        ranked_candidates=[],
+        terms=["鳖甲汤", "小柴胡汤"],
+    )
+
+    assert anchor.id == "formula:鳖甲汤"
 
 
 def test_question_service_includes_vector_recalled_chunks_as_evidence():

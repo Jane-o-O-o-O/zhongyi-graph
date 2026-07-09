@@ -27,12 +27,29 @@ class DocumentPage(BaseModel):
     layout_json: dict = Field(default_factory=dict)
 
 
+class ExtractionUnit(BaseModel):
+    unit_id: str
+    source_id: str
+    page_id: str
+    unit_index: int
+    title: str = ""
+    content: str
+    unit_type: Literal["article", "section", "table", "json", "ocr", "text"] = "text"
+    section_path: list[str] = Field(default_factory=list)
+    token_count: int = 0
+    char_start: int = 0
+    char_end: int = 0
+    metadata: dict = Field(default_factory=dict)
+
+
 class DocumentChunk(BaseModel):
     chunk_id: str
     source_id: str
     page_id: str
     chunk_index: int
     content: str
+    parent_unit_id: str = ""
+    unit_index: int = 0
     content_type: Literal["text", "table", "json", "ocr"] = "text"
     section_title: str = ""
     token_count: int = 0
@@ -72,6 +89,7 @@ class PublishBatch(BaseModel):
 class KnowledgeBundle(BaseModel):
     source: SourceManifest
     pages: list[DocumentPage] = Field(default_factory=list)
+    extraction_units: list[ExtractionUnit] = Field(default_factory=list)
     chunks: list[DocumentChunk] = Field(default_factory=list)
     entities: list[EntityCandidate] = Field(default_factory=list)
     relations: list[RelationCandidate] = Field(default_factory=list)

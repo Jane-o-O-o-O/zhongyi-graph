@@ -11,10 +11,11 @@ class GraphService:
     def demo(cls) -> "GraphService":
         return cls(SAMPLE_NODES, SAMPLE_EDGES)
 
+    def matching_nodes(self, terms: list[str]) -> list[GraphNode]:
+        return [node for node in self.nodes if any(term in node.name for term in terms)]
+
     def related_to_terms(self, terms: list[str]) -> tuple[list[GraphNode], list[GraphEdge]]:
-        matched_ids = {
-            node.id for node in self.nodes if any(term in node.name for term in terms)
-        }
+        matched_ids = {node.id for node in self.matching_nodes(terms)}
         return self.related_to_node_ids(list(matched_ids))
 
     def related_to_node_ids(self, node_ids: list[str]) -> tuple[list[GraphNode], list[GraphEdge]]:
@@ -33,4 +34,56 @@ class GraphService:
                     changed = changed or len(expanded_ids) > before
         selected_nodes = [node for node in self.nodes if node.id in expanded_ids]
         selected_edges = [edge for edge in self.edges if edge.id in selected_edge_ids]
+        return selected_nodes, selected_edges
+
+    def neighborhood(
+        self,
+        node_ids: list[str],
+        *,
+        allowed_relations: set[str],
+        terminal_labels: set[str] | None = None,
+        max_depth: int = 2,
+        max_nodes: int = 80,
+        max_edges: int = 160,
+    ) -> tuple[list[GraphNode], list[GraphEdge]]:
+        terminal_labels = terminal_labels or set()
+        nodes_by_id = {node.id: node for node in self.nodes}
+        node_labels = {node.id: node.label for node in self.nodes}
+        selected_ids = set(node_ids)
+        ordered_ids = [node_id for node_id in node_ids if node_id in nodes_by_id]
+        frontier = set(ordered_ids)
+        selected_edge_ids: set[str] = set()
+        for _depth in range(max_depth):
+            next_frontier: list[str] = []
+            for edge in self.edges:
+                if edge.relation not in allowed_relations:
+                    continue
+                if edge.source in frontier and edge.target not in selected_ids:
+                    selected_edge_ids.add(edge.id)
+                    selected_ids.add(edge.target)
+                    ordered_ids.append(edge.target)
+                    if node_labels.get(edge.target) not in terminal_labels:
+                        next_frontier.append(edge.target)
+                elif edge.target in frontier and edge.source not in selected_ids:
+                    selected_edge_ids.add(edge.id)
+                    selected_ids.add(edge.source)
+                    ordered_ids.append(edge.source)
+                    if node_labels.get(edge.source) not in terminal_labels:
+                        next_frontier.append(edge.source)
+                elif edge.source in selected_ids and edge.target in selected_ids:
+                    selected_edge_ids.add(edge.id)
+            if not next_frontier:
+                break
+            available = max_nodes - len(selected_ids)
+            if available <= 0:
+                break
+            frontier = set(next_frontier[:available])
+
+        selected_nodes = [nodes_by_id[node_id] for node_id in ordered_ids[:max_nodes]]
+        visible_ids = {node.id for node in selected_nodes}
+        selected_edges = [
+            edge
+            for edge in self.edges
+            if edge.id in selected_edge_ids and edge.source in visible_ids and edge.target in visible_ids
+        ][:max_edges]
         return selected_nodes, selected_edges

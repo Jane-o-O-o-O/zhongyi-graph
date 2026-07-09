@@ -2,7 +2,7 @@ from pathlib import Path
 import hashlib
 import tempfile
 
-from app.models.ingestion import DocumentChunk, IngestionJob, SourceManifest
+from app.models.ingestion import DocumentChunk, ExtractionUnit, IngestionJob, SourceManifest
 from app.services.document_parser import DocumentParser
 from app.services.graph_extractor import GraphExtractor
 from app.services.ingestion_repository import IngestionRepository
@@ -54,6 +54,7 @@ class IngestionService:
 
     def run_job(self, job_id: str) -> dict:
         job = self.jobs[job_id]
+        total_units = 0
         total_chunks = 0
         total_entities = 0
         total_relations = 0
@@ -61,12 +62,14 @@ class IngestionService:
         for source_id in job.source_ids:
             source = self.sources[source_id]
             content = self.storage.get_bytes(source.object_key)
-            pages, chunks, status = self.parser.parse(source, content)
+            pages, units, chunks, status = self.parser.parse(source, content)
             source.status = status
             self.register_source(source)
-            self.repository.replace_pages_and_chunks(source_id, pages, chunks)
-            entities, relations = self.extractor.extract(chunks)
+            self.repository.replace_pages_units_and_chunks(source_id, pages, units, chunks)
+            extraction_chunks = _units_as_extraction_chunks(units)
+            entities, relations = self.extractor.extract(extraction_chunks)
             self.repository.save_candidates(source_id, entities, relations)
+            total_units += len(units)
             total_chunks += len(chunks)
             total_entities += len(entities)
             total_relations += len(relations)
@@ -74,6 +77,7 @@ class IngestionService:
         return {
             "job_id": job.job_id,
             "status": job.status,
+            "unit_count": total_units,
             "chunk_count": total_chunks,
             "entity_count": total_entities,
             "relation_count": total_relations,
@@ -101,3 +105,28 @@ class IngestionService:
 
     def list_chunks(self, source_id: str) -> list[DocumentChunk]:
         return self.repository.list_chunks(source_id)
+
+
+def _units_as_extraction_chunks(units: list[ExtractionUnit]) -> list[DocumentChunk]:
+    return [
+        DocumentChunk(
+            chunk_id=unit.unit_id,
+            source_id=unit.source_id,
+            page_id=unit.page_id,
+            chunk_index=unit.unit_index,
+            content=unit.content,
+            parent_unit_id=unit.unit_id,
+            unit_index=unit.unit_index,
+            content_type="text" if unit.unit_type in {"article", "section"} else unit.unit_type,
+            section_title=unit.title,
+            token_count=unit.token_count,
+            char_start=unit.char_start,
+            char_end=unit.char_end,
+            metadata={
+                **unit.metadata,
+                "section_path": unit.section_path,
+                "extraction_unit": True,
+            },
+        )
+        for unit in units
+    ]

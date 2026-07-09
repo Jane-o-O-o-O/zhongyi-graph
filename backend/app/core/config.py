@@ -24,6 +24,17 @@ class Settings(BaseSettings):
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "tcm_knowledge"
+    ragflow_qdrant_collection: str = "tcm_ragflow_retrieval"
+    retrieval_engine: str = "legacy"
+    ragflow_vector_weight: float = 0.7
+    ragflow_token_weight: float = 0.3
+    ragflow_rerank_weight: float = 0.5
+    ragflow_vector_min_indexed_chunks: int = 1000
+    ragflow_vector_min_indexed_kg_entities: int = 1000
+    ragflow_vector_min_indexed_kg_relations: int = 1000
+    ragflow_vector_min_chunk_coverage_for_search: float = 0.8
+    ragflow_vector_min_kg_entity_coverage_for_search: float = 0.8
+    ragflow_vector_min_kg_relation_coverage_for_search: float = 0.8
 
     postgres_dsn: str = "postgresql+psycopg://tcm:tcm@localhost:5432/tcm_kg"
     minio_endpoint: str = "localhost:9000"

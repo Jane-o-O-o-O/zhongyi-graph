@@ -1,6 +1,22 @@
-from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate, SourceManifest
+from app.models.ingestion import (
+    DocumentChunk,
+    EntityCandidate,
+    ExtractionUnit,
+    RelationCandidate,
+    SourceManifest,
+)
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ingestion_service import IngestionService
+from app.services.object_storage import LocalObjectStorage
+
+
+class RecordingExtractor:
+    def __init__(self):
+        self.received_chunks = []
+
+    def extract(self, chunks):
+        self.received_chunks = chunks
+        return [], []
 
 
 def test_ingestion_service_restores_published_artifact_from_repository():
@@ -57,3 +73,39 @@ def test_ingestion_service_restores_published_artifact_from_repository():
     assert {node.name for node in artifact.nodes} == {"不寐", "心脾两虚"}
     assert artifact.edges[0].source == "symptom:不寐"
     assert artifact.evidence[0].snippet == "不寐可辨为心脾两虚。"
+
+
+def test_ingestion_service_extracts_from_parent_units_and_stores_child_chunks(tmp_path):
+    repository = IngestionRepository.in_memory()
+    extractor = RecordingExtractor()
+    service = IngestionService(
+        repository=repository,
+        storage=LocalObjectStorage(tmp_path),
+        extractor=extractor,
+    )
+    source = service.upload_source(
+        filename="普济方.txt",
+        mime_type="text/plain",
+        content="""
+<篇名>普济方
+
+<目录>卷一\\方脉总论
+
+<篇名>五常大论
+
+属性：头者诸阳之会。是以头痛多属于阳也。独厥阴肝脉，上入颃颡，连目系，上出额。
+""".strip().encode("utf-8"),
+    )
+    job = service.create_job([source.source_id])
+
+    result = service.run_job(job.job_id)
+    bundle = repository.get_bundle(source.source_id)
+
+    assert result["unit_count"] == 1
+    assert result["chunk_count"] == 1
+    assert bundle.extraction_units[0].title == "五常大论"
+    assert bundle.chunks[0].parent_unit_id == bundle.extraction_units[0].unit_id
+    assert [chunk.chunk_id for chunk in extractor.received_chunks] == [
+        bundle.extraction_units[0].unit_id
+    ]
+    assert extractor.received_chunks[0].content == bundle.extraction_units[0].content

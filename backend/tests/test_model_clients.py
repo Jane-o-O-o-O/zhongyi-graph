@@ -136,3 +136,131 @@ def test_structured_extraction_client_query_prompt_requests_expanded_entities():
     assert extracted["expanded_entities"] == ["肝阳上亢", "肝火上炎", "头风"]
     assert "expanded_entities" in captured["system"]
     assert "衍生" in captured["system"]
+
+
+def test_structured_extraction_client_extracts_units_in_one_batch_request():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read().decode("utf-8"))
+        captured["json"] = json.dumps(payload)
+        captured["user"] = payload["messages"][1]["content"]
+        captured["system"] = payload["messages"][0]["content"]
+        captured["model"] = payload["model"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "items": [
+                                        {
+                                            "unit_id": "unit:1",
+                                            "entities": [
+                                                {
+                                                    "name": "头痛",
+                                                    "label": "Symptom",
+                                                    "confidence": 0.9,
+                                                }
+                                            ],
+                                            "relations": [],
+                                        },
+                                        {
+                                            "unit_id": "unit:2",
+                                            "entities": [
+                                                {
+                                                    "name": "肝阳上亢",
+                                                    "label": "Syndrome",
+                                                    "confidence": 0.88,
+                                                }
+                                            ],
+                                            "relations": [],
+                                        },
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = StructuredExtractionClient(
+        base_url="https://api.siliconflow.cn/v1",
+        api_key="secret",
+        model="Qwen/Qwen3-8B",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.extract_chunks_batch(
+        [
+            {"unit_id": "unit:1", "text": "头痛多属于阳。"},
+            {"unit_id": "unit:2", "text": "肝阳上亢可见头痛眩晕。"},
+        ]
+    )
+
+    assert captured["model"] == "Qwen/Qwen3-8B"
+    assert json.loads(captured["json"])["enable_thinking"] is False
+    assert json.loads(captured["json"])["max_tokens"] == 4096
+    assert json.loads(captured["json"])["response_format"] == {"type": "json_object"}
+    assert captured["system"].startswith("/no_think")
+    assert captured["user"].startswith("/no_think")
+    assert captured["user"].count("unit_id") >= 2
+    assert result["items"][0]["unit_id"] == "unit:1"
+    assert result["items"][1]["entities"][0]["name"] == "肝阳上亢"
+
+
+def test_structured_extraction_client_normalizes_single_item_batch_response():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "unit_id": "unit:1",
+                                    "entities": [
+                                        {
+                                            "name": "头痛",
+                                            "label": "Symptom",
+                                            "confidence": 0.9,
+                                        }
+                                    ],
+                                    "relations": [],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = StructuredExtractionClient(
+        base_url="https://api.siliconflow.cn/v1",
+        api_key="secret",
+        model="Qwen/Qwen3-8B",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.extract_chunks_batch(
+        [
+            {"unit_id": "unit:1", "text": "头痛多属于阳。"},
+            {"unit_id": "unit:2", "text": "肝阳上亢可见头痛眩晕。"},
+        ]
+    )
+
+    assert result == {
+        "items": [
+            {
+                "unit_id": "unit:1",
+                "entities": [{"name": "头痛", "label": "Symptom", "confidence": 0.9}],
+                "relations": [],
+            }
+        ]
+    }

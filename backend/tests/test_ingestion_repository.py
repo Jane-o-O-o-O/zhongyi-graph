@@ -2,6 +2,7 @@ from app.models.ingestion import (
     DocumentChunk,
     DocumentPage,
     EntityCandidate,
+    ExtractionUnit,
     RelationCandidate,
     SourceManifest,
 )
@@ -24,12 +25,24 @@ def test_repository_persists_source_pages_chunks_and_candidates():
         page_number=1,
         text="失眠可辨为心脾两虚，治以补益心脾。",
     )
+    unit = ExtractionUnit(
+        unit_id="unit:source:uploaded:abc:0001",
+        source_id=source.source_id,
+        page_id=page.page_id,
+        unit_index=1,
+        title="失眠条",
+        content="失眠可辨为心脾两虚，治以补益心脾。",
+        section_path=["资料", "失眠条"],
+        token_count=18,
+    )
     chunk = DocumentChunk(
         chunk_id="chunk:source:uploaded:abc:0001",
         source_id=source.source_id,
         page_id=page.page_id,
         chunk_index=1,
         content="失眠可辨为心脾两虚，治以补益心脾。",
+        parent_unit_id=unit.unit_id,
+        unit_index=unit.unit_index,
         token_count=18,
     )
     entity = EntityCandidate(
@@ -51,12 +64,13 @@ def test_repository_persists_source_pages_chunks_and_candidates():
     )
 
     repository.upsert_source(source)
-    repository.replace_pages_and_chunks(source.source_id, [page], [chunk])
+    repository.replace_pages_units_and_chunks(source.source_id, [page], [unit], [chunk])
     repository.save_candidates(source.source_id, [entity], [relation])
     bundle = repository.get_bundle(source.source_id)
 
     assert bundle.source.source_id == source.source_id
     assert bundle.pages == [page]
+    assert bundle.extraction_units == [unit]
     assert bundle.chunks == [chunk]
     assert bundle.entities == [entity]
     assert bundle.relations == [relation]
@@ -212,3 +226,49 @@ def test_repository_generates_unique_publish_batch_ids():
     second = repository.record_publish_batch(["source:1"], node_count=1, edge_count=1, chunk_count=1)
 
     assert first.batch_id != second.batch_id
+
+
+def test_repository_replaces_units_with_pages_and_chunks():
+    repository = IngestionRepository.in_memory()
+    source = SourceManifest(
+        source_id="source:uploaded:replace",
+        filename="replace.txt",
+        mime_type="text/plain",
+        checksum="replace",
+        status="parsed",
+        object_key="sources/replace/replace.txt",
+    )
+    first_page = DocumentPage(
+        page_id="page:source:uploaded:replace:1",
+        source_id=source.source_id,
+        page_number=1,
+        text="旧内容",
+    )
+    first_unit = ExtractionUnit(
+        unit_id="unit:source:uploaded:replace:0001",
+        source_id=source.source_id,
+        page_id=first_page.page_id,
+        unit_index=1,
+        title="旧条",
+        content="旧内容",
+    )
+    first_chunk = DocumentChunk(
+        chunk_id="chunk:source:uploaded:replace:0001",
+        source_id=source.source_id,
+        page_id=first_page.page_id,
+        chunk_index=1,
+        content="旧内容",
+        parent_unit_id=first_unit.unit_id,
+        unit_index=1,
+    )
+    second_page = first_page.model_copy(update={"text": "新内容"})
+    second_unit = first_unit.model_copy(update={"title": "新条", "content": "新内容"})
+    second_chunk = first_chunk.model_copy(update={"content": "新内容"})
+
+    repository.upsert_source(source)
+    repository.replace_pages_units_and_chunks(source.source_id, [first_page], [first_unit], [first_chunk])
+    repository.replace_pages_units_and_chunks(source.source_id, [second_page], [second_unit], [second_chunk])
+    bundle = repository.get_bundle(source.source_id)
+
+    assert [unit.content for unit in bundle.extraction_units] == ["新内容"]
+    assert [chunk.content for chunk in bundle.chunks] == ["新内容"]

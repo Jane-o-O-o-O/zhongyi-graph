@@ -14,6 +14,44 @@ SYMPTOM_PATH_RELATIONS = (
 )
 FORMULA_QUERY_TERMS = ("汤", "方", "方剂", "组成", "主治")
 HERB_QUERY_TERMS = ("药", "中药", "功效", "归经", "性味")
+FORMULA_NEIGHBOR_RELATIONS = {
+    "HAS_PRESCRIPTION",
+    "COMPOSED_OF",
+    "HAS_DOSE",
+    "TREATS",
+    "HAS_ALIAS",
+    "FROM_SOURCE",
+}
+HERB_NEIGHBOR_RELATIONS = {
+    "COMPOSED_OF",
+    "HAS_FUNCTION",
+    "TREATS",
+    "HAS_ALIAS",
+    "HAS_PROPERTY",
+    "HAS_FLAVOR",
+    "ENTERS_MERIDIAN",
+    "DISTRIBUTED_IN",
+    "FROM_SOURCE",
+}
+DEFAULT_NEIGHBOR_RELATIONS = {
+    "MANIFESTS_AS",
+    "RECOMMENDS_TREATMENT",
+    "RECOMMENDS_FORMULA",
+    "COMPOSED_OF",
+    "TREATS",
+    "RELATED_TO",
+}
+FORMULA_TERMINAL_LABELS = {"Alias", "Dose", "Indication", "Source"}
+HERB_TERMINAL_LABELS = {
+    "Alias",
+    "DistributionArea",
+    "Flavor",
+    "Function",
+    "Indication",
+    "Meridian",
+    "Property",
+    "Source",
+}
 
 
 @dataclass(frozen=True)
@@ -36,7 +74,7 @@ class HybridRetriever:
         self.rerank_client = rerank_client
 
     def retrieve(self, question: str, terms: list[str], top_k: int = 8) -> RetrievalResult:
-        keyword_nodes, _ = self.graph_service.related_to_terms(terms)
+        keyword_nodes = self.graph_service.matching_nodes(terms)
         candidate_ids = {node.id for node in keyword_nodes}
 
         try:
@@ -52,7 +90,7 @@ class HybridRetriever:
         intent = _infer_intent(question)
         anchor_ids = self._select_anchor_ids(intent, ranked_candidates, terms, top_k)
 
-        nodes, edges = self.graph_service.related_to_node_ids(anchor_ids)
+        nodes, edges = self._retrieve_neighborhood(intent, anchor_ids)
         if intent == "symptom_inquiry":
             nodes, edges, seed_ids = self._symptom_clinical_path(nodes, edges, anchor_ids)
         else:
@@ -71,6 +109,39 @@ class HybridRetriever:
             seed_node_ids=seed_ids,
         )
 
+    def _retrieve_neighborhood(
+        self,
+        intent: str,
+        anchor_ids: list[str],
+    ) -> tuple[list[GraphNode], list[GraphEdge]]:
+        if not anchor_ids:
+            return [], []
+        if intent == "formula_inquiry":
+            return self.graph_service.neighborhood(
+                anchor_ids,
+                allowed_relations=FORMULA_NEIGHBOR_RELATIONS,
+                terminal_labels=FORMULA_TERMINAL_LABELS,
+                max_depth=3,
+                max_nodes=120,
+                max_edges=240,
+            )
+        if intent == "herb_inquiry":
+            return self.graph_service.neighborhood(
+                anchor_ids,
+                allowed_relations=HERB_NEIGHBOR_RELATIONS,
+                terminal_labels=HERB_TERMINAL_LABELS,
+                max_depth=2,
+                max_nodes=120,
+                max_edges=240,
+            )
+        return self.graph_service.neighborhood(
+            anchor_ids,
+            allowed_relations=DEFAULT_NEIGHBOR_RELATIONS,
+            max_depth=3,
+            max_nodes=120,
+            max_edges=240,
+        )
+
     def _select_anchor_ids(
         self,
         intent: str,
@@ -80,7 +151,10 @@ class HybridRetriever:
     ) -> list[str]:
         if intent == "formula_inquiry":
             anchor = self._direct_or_ranked_node("Formula", ranked_candidates, terms)
-            return [anchor.id] if anchor else [node.id for node in ranked_candidates[:top_k]]
+            if anchor:
+                return [anchor.id]
+            prescription = self._direct_or_ranked_node("Prescription", ranked_candidates, terms)
+            return [prescription.id] if prescription else [node.id for node in ranked_candidates[:top_k]]
         if intent == "herb_inquiry":
             anchor = self._direct_or_ranked_node("Herb", ranked_candidates, terms)
             return [anchor.id] if anchor else [node.id for node in ranked_candidates[:top_k]]
@@ -102,13 +176,10 @@ class HybridRetriever:
         ranked_candidates: list[GraphNode],
         terms: list[str],
     ) -> GraphNode | None:
-        direct_matches = [
-            node
-            for node in self.graph_service.nodes
-            if node.label == label and any(term in node.name for term in terms)
-        ]
-        if direct_matches:
-            return direct_matches[0]
+        for term in terms:
+            for node in self.graph_service.nodes:
+                if node.label == label and term in node.name:
+                    return node
 
         for node in ranked_candidates:
             if node.label == label:
