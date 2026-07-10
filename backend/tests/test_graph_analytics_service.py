@@ -142,3 +142,57 @@ def test_graph_analytics_prefers_leiden_community_runner_when_available(monkeypa
     assert result.by_node_id["node:0"].community_id == result.by_node_id["node:2"].community_id
     assert result.by_node_id["node:1"].community_id == result.by_node_id["node:3"].community_id
     assert result.by_node_id["node:0"].community_id != result.by_node_id["node:1"].community_id
+
+
+def test_graph_analytics_preserves_hierarchical_leiden_levels(monkeypatch):
+    @dataclass(frozen=True)
+    class FakePartition:
+        level: int
+        node: str
+        cluster: int
+
+    def fake_hierarchical_leiden(graph, max_cluster_size, random_seed):
+        del graph, max_cluster_size, random_seed
+        return [
+            FakePartition(0, "node:0", 10),
+            FakePartition(0, "node:1", 20),
+            FakePartition(0, "node:2", 10),
+            FakePartition(1, "node:0", 100),
+            FakePartition(1, "node:1", 100),
+            FakePartition(1, "node:2", 200),
+        ]
+
+    monkeypatch.setattr(
+        graph_analytics_module,
+        "_hierarchical_leiden",
+        fake_hierarchical_leiden,
+        raising=False,
+    )
+    nodes = [
+        GraphNode(id=f"node:{index}", label="Herb", name=f"节点{index}")
+        for index in range(3)
+    ]
+    edges = [
+        GraphEdge(
+            id="edge:0",
+            source="node:0",
+            target="node:1",
+            relation="RELATED_TO",
+            display="相关",
+        ),
+        GraphEdge(
+            id="edge:1",
+            source="node:1",
+            target="node:2",
+            relation="RELATED_TO",
+            display="相关",
+        ),
+    ]
+
+    result = GraphAnalyticsService().analyze(nodes, edges)
+    result.apply_to_nodes(nodes)
+
+    assert result.by_node_id["node:0"].community_id == result.by_node_id["node:2"].community_id
+    assert result.by_node_id["node:0"].community_levels == {"0": 0, "1": 0}
+    assert result.by_node_id["node:1"].community_levels == {"0": 1, "1": 0}
+    assert nodes[0].properties["community_levels"] == ["0:0", "1:0"]
