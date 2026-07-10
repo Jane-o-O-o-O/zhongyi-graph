@@ -333,21 +333,23 @@ class RagflowRetrievalSyncService:
             }
             reports.append(
                 RetrievalCommunityReport(
-                    report_id=f"community:{community_id}",
+                    report_id=_community_report_id(summary),
                     title=summary.title,
                     content_with_weight=json.dumps(content, ensure_ascii=False),
                     summary=summary.summary,
                     evidences=content["evidences"],
                     entities_kwd=summary.entities,
                     weight_flt=summary.weight,
-                    source_id=_community_source_ids(graph_service, community_id),
+                    source_id=_community_source_ids(graph_service, summary),
                     metadata={
                         "community_id": community_id,
+                        "level": summary.level,
                         "community_size": summary.size,
                         "label_counts": summary.label_counts,
                         "findings": summary.findings or [],
                         "rating": summary.rating,
                         "rating_explanation": summary.rating_explanation,
+                        "source_node_ids": summary.source_node_ids,
                     },
                 )
             )
@@ -477,19 +479,27 @@ def _chunk_ids_from_evidence_ids(evidence_ids: list[str]) -> list[str]:
     return chunk_ids
 
 
-def _community_source_ids(graph_service: GraphService, community_id: int) -> list[str]:
+def _community_report_id(summary) -> str:
+    if int(getattr(summary, "level", 0) or 0) <= 0:
+        return f"community:{summary.community_id}"
+    return f"community:{summary.level}:{summary.community_id}"
+
+
+def _community_source_ids(graph_service: GraphService, summary) -> list[str]:
     source_ids: list[str] = []
+    community_id = int(summary.community_id)
+    source_node_ids = set(summary.source_node_ids or [])
     node_ids = {
         node.id
         for node in graph_service.nodes
-        if int(node.properties.get("community_id", -1)) == community_id
+        if node.id in source_node_ids or int(node.properties.get("community_id", -1)) == community_id
     }
     for node in graph_service.nodes:
         if node.id in node_ids:
-            source_ids.extend(_source_chunks_from_graph_node(node))
+            source_ids.extend(_source_groups_from_node(node))
     for edge in graph_service.edges:
         if edge.source in node_ids and edge.target in node_ids:
-            source_ids.extend(edge.evidence_ids)
+            source_ids.extend(_source_groups_from_evidence(edge.evidence_ids))
     return _unique(source_ids)
 
 

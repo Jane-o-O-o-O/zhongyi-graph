@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.models.graph import GraphNode
@@ -20,6 +20,8 @@ class CommunitySummary:
     findings: list[dict[str, Any] | str] | None = None
     rating: float = 0.0
     rating_explanation: str = ""
+    level: int = 0
+    source_node_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,7 @@ class GraphCommunitySummaryService:
                     f"{label}:{count}"
                     for label, count in label_counts.most_common()
                 ],
+                source_node_ids=[node.id for node in sorted(group_nodes, key=lambda item: item.id)],
             )
         return GraphCommunitySummaryResult(by_community_id=summaries)
 

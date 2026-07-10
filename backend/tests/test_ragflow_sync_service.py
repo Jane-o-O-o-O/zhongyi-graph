@@ -9,6 +9,10 @@ from app.models.ingestion import (
     SourceManifest,
 )
 from app.models.graph import GraphEdge, GraphNode
+from app.services.graph_community_summary_service import (
+    CommunitySummary,
+    GraphCommunitySummaryResult,
+)
 from app.services.ingestion_repository import IngestionRepository
 from app.services.graph_service import GraphService
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
@@ -435,3 +439,58 @@ def test_sync_service_includes_resolution_and_community_metadata_in_kg_entities(
     assert "community_summary" in herb.metadata
     assert '"aliases": ["白芍药"]' in herb.content_with_weight
     assert alias.metadata["canonical_id"] == "herb:白芍"
+
+
+def test_sync_service_preserves_hierarchical_community_report_source_ids():
+    ingestion_repository, retrieval_repository = _shared_repositories()
+    graph_service = GraphService(
+        nodes=[
+            GraphNode(
+                id="symptom:失眠",
+                label="Symptom",
+                name="失眠",
+                properties={"source_chunks": ["chunk:source:insomnia:0001"]},
+            ),
+            GraphNode(
+                id="syndrome:心脾两虚",
+                label="Syndrome",
+                name="心脾两虚",
+                properties={"source_chunks": ["chunk:source:syndrome:0001"]},
+            ),
+        ],
+        edges=[
+            GraphEdge(
+                id="edge:失眠:心脾两虚",
+                source="symptom:失眠",
+                target="syndrome:心脾两虚",
+                relation="MANIFESTS_AS",
+                display="可辨为",
+            )
+        ],
+    )
+    graph_service.community_summaries = GraphCommunitySummaryResult(
+        {
+            1_000_000: CommunitySummary(
+                community_id=1_000_000,
+                title="失眠、心脾两虚",
+                summary="第 1 层社区报告",
+                size=2,
+                weight=2.0,
+                entities=["失眠", "心脾两虚"],
+                label_counts=["Symptom:1", "Syndrome:1"],
+                level=1,
+                source_node_ids=["symptom:失眠", "syndrome:心脾两虚"],
+            )
+        }
+    )
+
+    RagflowRetrievalSyncService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_service=graph_service,
+    ).rebuild_from_ingestion()
+
+    report = retrieval_repository.list_community_reports()[0]
+    assert report.report_id == "community:1:1000000"
+    assert report.source_id == ["source:insomnia", "source:syndrome"]
+    assert report.metadata["level"] == 1
