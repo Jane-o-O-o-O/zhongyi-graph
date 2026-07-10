@@ -48,6 +48,10 @@ class RagflowGraphBuildAlreadyRunningError(RuntimeError):
     pass
 
 
+class RagflowGraphBuildCanceledError(RuntimeError):
+    pass
+
+
 class RagflowGraphBuildService:
     def __init__(
         self,
@@ -115,6 +119,21 @@ class RagflowGraphBuildService:
                     with_resolution=with_resolution,
                     with_community=with_community,
                 )
+            except RagflowGraphBuildCanceledError:
+                current_run = self.retrieval_repository.get_graphrag_build_run(run_id)
+                metadata = dict(current_run.metadata if current_run else {})
+                metadata["cancel_requested"] = True
+                self._save_build_run(
+                    run_id=run_id,
+                    status="canceled",
+                    started_at=started_at,
+                    finished_at=_utc_now(),
+                    total=len(selected_source_ids),
+                    processed=current_run.processed if current_run else 0,
+                    failed=current_run.failed if current_run else 0,
+                    metadata=metadata,
+                )
+                raise
             except Exception as exc:
                 self._save_build_run(
                     run_id=run_id,
@@ -166,6 +185,7 @@ class RagflowGraphBuildService:
         failed = 0
         source_events: list[dict] = []
         for source_id in selected_source_ids:
+            self._raise_if_cancel_requested(run_id)
             if self.retrieval_repository.get_subgraph_artifact(source_id):
                 skipped += 1
                 self._record_source_progress(
@@ -236,6 +256,7 @@ class RagflowGraphBuildService:
                 failed=failed,
                 source_events=source_events,
             )
+        self._raise_if_cancel_requested(run_id)
         merged_nodes, merged_edges, merged_sources = _merge_subgraph_artifacts(
             self.retrieval_repository.list_graph_artifacts(available_only=True)
         )
@@ -398,6 +419,10 @@ class RagflowGraphBuildService:
             source_events=source_events,
         )
 
+    def _raise_if_cancel_requested(self, run_id: str) -> None:
+        if self.retrieval_repository.is_graphrag_build_cancel_requested(run_id):
+            raise RagflowGraphBuildCanceledError("GraphRAG build was canceled")
+
     def _save_progress_run(
         self,
         *,
@@ -411,6 +436,15 @@ class RagflowGraphBuildService:
         failed: int,
         source_events: list[dict],
     ) -> None:
+        metadata = {
+            "source_ids": selected_source_ids,
+            "with_resolution": with_resolution,
+            "with_community": with_community,
+            "current_source_id": current_source_id,
+            "source_events": list(source_events),
+        }
+        if self.retrieval_repository.is_graphrag_build_cancel_requested(run_id):
+            metadata["cancel_requested"] = True
         self._save_build_run(
             run_id=run_id,
             status="running",
@@ -419,13 +453,7 @@ class RagflowGraphBuildService:
             total=len(selected_source_ids),
             processed=processed,
             failed=failed,
-            metadata={
-                "source_ids": selected_source_ids,
-                "with_resolution": with_resolution,
-                "with_community": with_community,
-                "current_source_id": current_source_id,
-                "source_events": list(source_events),
-            },
+            metadata=metadata,
         )
 
 

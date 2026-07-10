@@ -274,6 +274,17 @@ def get_ragflow_graphrag_run(run_id: str) -> GraphBuildRunResponse:
     return GraphBuildRunResponse(**asdict(run))
 
 
+@router.post("/retrieval/graphrag/runs/{run_id}/cancel")
+def cancel_ragflow_graphrag_run(run_id: str) -> dict:
+    if not ragflow_repository.request_graphrag_build_cancel(run_id):
+        raise HTTPException(status_code=404, detail="GraphRAG build run not running")
+    return {
+        "status": "ok",
+        "run_id": run_id,
+        "cancel_requested": True,
+    }
+
+
 def _refresh_question_graph_from_ragflow_global_artifact() -> bool:
     artifact = ragflow_repository.get_graph_artifact("graph:global")
     if not artifact:

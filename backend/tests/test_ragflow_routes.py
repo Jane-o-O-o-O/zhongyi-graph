@@ -8,6 +8,7 @@ from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandida
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
+from app.services.ragflow_compat.schemas import RetrievalGraphRagBuildRun
 
 
 def test_retrieval_status_endpoint_reports_engine_and_audit_counts():
@@ -287,6 +288,43 @@ def test_graphrag_build_endpoint_rejects_concurrent_build(monkeypatch):
 
     assert response.status_code == 409
     assert response.json()["detail"] == "GraphRAG build is already running"
+
+
+def test_graphrag_build_cancel_endpoint_marks_running_run(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    retrieval_repository = RagflowRetrievalRepository(engine)
+    retrieval_repository.save_graphrag_build_run(
+        RetrievalGraphRagBuildRun(
+            run_id="graphrag:build:cancel",
+            status="running",
+            started_at="2026-07-10T00:00:00Z",
+            total=2,
+            processed=1,
+            metadata={"source_ids": ["doc:a", "doc:b"]},
+        )
+    )
+    monkeypatch.setattr(routes, "ragflow_repository", retrieval_repository)
+
+    response = TestClient(app).post(
+        "/api/retrieval/graphrag/runs/graphrag:build:cancel/cancel"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "run_id": "graphrag:build:cancel",
+        "cancel_requested": True,
+    }
+    run_response = TestClient(app).get(
+        "/api/retrieval/graphrag/runs/graphrag:build:cancel"
+    )
+    assert run_response.status_code == 200
+    assert run_response.json()["metadata"]["cancel_requested"] is True
 
 
 def test_graphrag_build_endpoint_uses_llm_community_report_client(monkeypatch):

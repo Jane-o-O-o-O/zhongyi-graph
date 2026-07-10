@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
@@ -21,7 +22,10 @@ from app.services.ragflow_compat.checkpoints import (
 )
 from app.services.ragflow_compat.community_reports import RagflowGraphCommunityReportService
 from app.services.ragflow_compat.entity_resolution import RagflowGraphEntityResolutionService
-from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
+from app.services.ragflow_compat.graph_build_service import (
+    RagflowGraphBuildCanceledError,
+    RagflowGraphBuildService,
+)
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
@@ -176,6 +180,25 @@ class FlakyExtractor:
         return FixedExtractor().extract(chunks, hint_terms=hint_terms)
 
 
+class CancelAfterFirstSourceExtractor:
+    def __init__(self, repository: RecordingRunRepository):
+        self.repository = repository
+        self.calls = 0
+        self.cancel_run_id = ""
+
+    def extract(self, chunks, hint_terms=None):
+        self.calls += 1
+        if self.calls == 1:
+            running_runs = [
+                run
+                for run in self.repository.saved_runs
+                if run.status == "running" and run.run_id.startswith("graphrag:build:")
+            ]
+            self.cancel_run_id = running_runs[-1].run_id
+            self.repository.request_graphrag_build_cancel(self.cancel_run_id)
+        return FixedExtractor().extract(chunks, hint_terms=hint_terms)
+
+
 class AliasPairExtractor:
     def extract(self, chunks, hint_terms=None):
         return [
@@ -315,6 +338,39 @@ def test_build_records_per_source_progress_in_run_state():
     assert completed_run is not None
     assert completed_run.status == "completed"
     assert completed_run.metadata["source_events"] == progress_runs[-1].metadata["source_events"]
+
+
+def test_build_stops_at_source_boundary_when_cancel_requested():
+    ingestion_repository, retrieval_repository = _repositories_with_recording_runs()
+    for source_id in ["doc:a", "doc:b"]:
+        ingestion_repository.upsert_source(_source(source_id))
+        ingestion_repository.replace_pages_and_chunks(source_id, [], [_chunk(source_id)])
+    extractor = CancelAfterFirstSourceExtractor(retrieval_repository)
+
+    with pytest.raises(RagflowGraphBuildCanceledError):
+        RagflowGraphBuildService(
+            ingestion_repository=ingestion_repository,
+            retrieval_repository=retrieval_repository,
+            graph_extractor=extractor,
+        ).build(["doc:a", "doc:b"], with_resolution=False, with_community=False)
+
+    assert extractor.calls == 1
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
+    assert retrieval_repository.get_subgraph_artifact("doc:b") is None
+    run = retrieval_repository.get_graphrag_build_run(extractor.cancel_run_id)
+    assert run is not None
+    assert run.status == "canceled"
+    assert run.processed == 1
+    assert run.failed == 0
+    assert run.metadata["cancel_requested"] is True
+    assert run.metadata["source_events"] == [
+        {"source_id": "doc:a", "status": "built", "processed": 1, "failed": 0}
+    ]
+    assert retrieval_repository.claim_graphrag_build_lock(
+        "graphrag:build:next",
+        started_at="2026-07-10T00:00:00Z",
+        metadata={},
+    )
 
 
 def test_build_merges_available_subgraphs_into_global_graph_artifact():

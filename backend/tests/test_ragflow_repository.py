@@ -284,6 +284,29 @@ def test_repository_claims_and_releases_graphrag_build_lock():
     )
 
 
+def test_repository_marks_graphrag_build_run_cancel_requested():
+    repository = _repository()
+    run = RetrievalGraphRagBuildRun(
+        run_id="graphrag:build:cancel",
+        status="running",
+        started_at="2026-07-10T00:00:00Z",
+        total=2,
+        processed=1,
+        failed=0,
+        metadata={"source_ids": ["doc:a", "doc:b"]},
+    )
+    repository.save_graphrag_build_run(run)
+
+    assert repository.request_graphrag_build_cancel("graphrag:build:cancel")
+    assert repository.is_graphrag_build_cancel_requested("graphrag:build:cancel")
+    assert not repository.request_graphrag_build_cancel("missing")
+
+    canceled = repository.get_graphrag_build_run("graphrag:build:cancel")
+    assert canceled is not None
+    assert canceled.status == "running"
+    assert canceled.metadata["cancel_requested"] is True
+
+
 def test_repository_audit_counts_vectors_and_chunk_lengths():
     repository = _repository()
     repository.replace_documents(

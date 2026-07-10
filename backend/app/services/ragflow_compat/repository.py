@@ -328,6 +328,32 @@ class RagflowRetrievalRepository:
                 .values(status="released", finished_at=_utc_now(), processed=1)
             )
 
+    def request_graphrag_build_cancel(self, run_id: str) -> bool:
+        run = self.get_graphrag_build_run(run_id)
+        if not run or run.status != "running":
+            return False
+        metadata = {**run.metadata, "cancel_requested": True}
+        self.save_graphrag_build_run(
+            RetrievalGraphRagBuildRun(
+                run_id=run.run_id,
+                status=run.status,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                cursor=run.cursor,
+                total=run.total,
+                processed=run.processed,
+                failed=run.failed,
+                metadata=metadata,
+            )
+        )
+        return True
+
+    def is_graphrag_build_cancel_requested(self, run_id: str) -> bool:
+        run = self.get_graphrag_build_run(run_id)
+        if not run:
+            return False
+        return bool(run.metadata.get("cancel_requested"))
+
     def update_chunk_vector_status(self, chunk_id: str, *, point_id: str, status: str) -> None:
         if self.engine.dialect.name != "postgresql":
             with self._claim_lock:
