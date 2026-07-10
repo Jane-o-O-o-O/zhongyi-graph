@@ -681,6 +681,7 @@ def _merge_subgraph_artifacts(artifacts) -> tuple[list[GraphNode], list[GraphEdg
             edges_by_key[edge_key] = edge
     nodes = _tidy_graph_nodes(nodes_by_id)
     edges = _tidy_graph_edges(edges_by_key, set(nodes))
+    nodes = _rank_graph_nodes(nodes, edges)
     return (
         [nodes[node_id] for node_id in sorted(nodes)],
         sorted(edges, key=lambda edge: edge.id),
@@ -792,6 +793,22 @@ def _tidy_graph_edges(
         and edge.display.strip()
         and edge.evidence_ids
     ]
+
+
+def _rank_graph_nodes(
+    nodes_by_id: dict[str, GraphNode],
+    edges: list[GraphEdge],
+) -> dict[str, GraphNode]:
+    degree_by_node = {node_id: 0 for node_id in nodes_by_id}
+    for edge in edges:
+        degree_by_node[edge.source] = degree_by_node.get(edge.source, 0) + 1
+        degree_by_node[edge.target] = degree_by_node.get(edge.target, 0) + 1
+    return {
+        node_id: node.model_copy(
+            update={"properties": {**node.properties, "rank": degree_by_node[node_id]}}
+        )
+        for node_id, node in nodes_by_id.items()
+    }
 
 
 def _global_graph_artifact(

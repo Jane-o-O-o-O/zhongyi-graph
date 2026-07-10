@@ -476,6 +476,7 @@ def test_build_merges_available_subgraphs_into_global_graph_artifact():
     assert global_artifact.source_id == ["doc:a", "doc:b"]
     payload = json.loads(global_artifact.content_with_weight)
     assert {node["name"] for node in payload["nodes"]} == {"白芍", "养血敛阴"}
+    assert {node["properties"]["rank"] for node in payload["nodes"]} == {1}
     assert len(payload["edges"]) == 1
 
 
