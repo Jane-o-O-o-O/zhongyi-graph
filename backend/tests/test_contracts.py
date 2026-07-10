@@ -114,6 +114,12 @@ def test_query_request_accepts_community_report_topn():
     assert request.comm_topn == 2
 
 
+def test_query_request_accepts_graphrag_context_token_budget():
+    request = QueryRequest(question="失眠怎么辨证？", max_token=128)
+
+    assert request.max_token == 128
+
+
 def test_query_request_rejects_blank_question_after_trim():
     with pytest.raises(ValidationError):
         QueryRequest(question="   ")

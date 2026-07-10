@@ -33,7 +33,13 @@ class RagflowCompatibleRetrievalService:
         self.query_rewriter = query_rewriter
         self.qdrant_stats_provider = qdrant_stats_provider
 
-    def answer(self, question: str, *, comm_topn: int = 1) -> QueryResponse:
+    def answer(
+        self,
+        question: str,
+        *,
+        comm_topn: int = 1,
+        max_token: int = 8196,
+    ) -> QueryResponse:
         fulltext = self.fulltext_retriever.retrieve(question, top_k=8)
         fallback_answer_types = _infer_answer_types(question)
         fallback_entities = _entities_from_keywords(fulltext.keywords)
@@ -51,7 +57,7 @@ class RagflowCompatibleRetrievalService:
             comm_topn=comm_topn,
         )
         evidence = assemble_evidence_cards(fulltext.hits, kg.graph_edges)
-        kg_context = _build_kg_context(kg)
+        kg_context = _build_kg_context(kg, max_token=max_token)
         kg_evidence = [kg_context] if kg_context else []
         entities = _unique([entity.entity for entity in kg.entities] + entities_from_query)
         graph_paths = [
@@ -84,6 +90,7 @@ class RagflowCompatibleRetrievalService:
                 "kg_relations": len(kg.relations),
                 "community_reports": len(kg.community_reports),
                 "kg_context_docnm": "Related content in Knowledge Graph",
+                "kg_context_max_token": max_token,
                 "kg_context": kg_context,
             },
         )
@@ -164,7 +171,7 @@ def _build_kg_context(kg, *, max_token: int = 8196) -> str:
             "Description": _description_text(entity.description),
         }
         row_tokens = _context_token_count(str(row))
-        if entity_rows and remaining - row_tokens <= 0:
+        if remaining - row_tokens <= 0:
             break
         remaining -= row_tokens
         entity_rows.append(row)
@@ -180,7 +187,7 @@ def _build_kg_context(kg, *, max_token: int = 8196) -> str:
             "Description": _description_text(relation.description),
         }
         row_tokens = _context_token_count(str(row))
-        if relation_rows and remaining - row_tokens <= 0:
+        if remaining - row_tokens <= 0:
             break
         remaining -= row_tokens
         relation_rows.append(row)
@@ -194,7 +201,7 @@ def _build_kg_context(kg, *, max_token: int = 8196) -> str:
     for index, report in enumerate(kg.community_reports, start=1):
         report_text = _community_report_text(index, report)
         report_tokens = _context_token_count(report_text)
-        if community_texts and remaining - report_tokens <= 0:
+        if remaining - report_tokens <= 0:
             break
         remaining -= report_tokens
         community_texts.append(report_text)

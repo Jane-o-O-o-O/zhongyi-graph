@@ -136,9 +136,19 @@ class QuestionService:
         )
         self.vector_index._vectors = None
 
-    def answer(self, question: str, *, comm_topn: int = 1) -> QueryResponse:
+    def answer(
+        self,
+        question: str,
+        *,
+        comm_topn: int = 1,
+        max_token: int = 8196,
+    ) -> QueryResponse:
         if self.retrieval_engine == "ragflow_compat" and self.ragflow_retrieval_service:
-            return self.ragflow_retrieval_service.answer(question, comm_topn=comm_topn)
+            return self.ragflow_retrieval_service.answer(
+                question,
+                comm_topn=comm_topn,
+                max_token=max_token,
+            )
         terms = self._extract_terms(question)
         retrieval = self.hybrid_retriever.retrieve(question=question, terms=terms, top_k=8)
         nodes = retrieval.nodes

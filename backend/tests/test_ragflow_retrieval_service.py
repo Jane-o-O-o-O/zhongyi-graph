@@ -217,6 +217,43 @@ def test_ragflow_compatible_retrieval_service_honors_community_report_topn():
     assert response.diagnostics["community_reports"] == 2
 
 
+def test_ragflow_compatible_retrieval_service_applies_kg_context_token_budget():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    repository = RagflowRetrievalRepository(engine)
+    repository.replace_kg_entities(
+        [
+            RetrievalKgEntity(
+                entity_id="entity:失眠",
+                entity_name="失眠",
+                entity_type="Symptom",
+                source_node_id="symptom:失眠",
+                content_with_weight='{"description":"失眠 Symptom"}',
+                description="失眠 Symptom",
+                rank_flt=2.0,
+            )
+        ]
+    )
+    doc_store = RagflowDocStore(repository, EmbeddingClient.demo())
+    service = RagflowCompatibleRetrievalService(
+        repository=repository,
+        fulltext_retriever=RagflowFulltextRetriever(
+            doc_store=doc_store,
+            rerank_client=RerankClient.demo(),
+        ),
+        kg_search=RagflowKgSearch(doc_store),
+        llm_client=LlmClient.demo(),
+    )
+
+    response = service.answer("失眠", max_token=1)
+
+    assert response.diagnostics["kg_context"] == ""
+
+
 def test_ragflow_compatible_retrieval_service_uses_query_rewrite_with_type_pool():
     engine = create_engine(
         "sqlite+pysqlite://",

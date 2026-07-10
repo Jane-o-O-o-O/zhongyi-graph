@@ -23,18 +23,20 @@ def test_question_service_delegates_to_ragflow_service_when_configured():
     captured = {}
 
     class FakeRagflowService:
-        def answer(self, question, *, comm_topn=1):
+        def answer(self, question, *, comm_topn=1, max_token=8196):
             captured["question"] = question
             captured["comm_topn"] = comm_topn
+            captured["max_token"] = max_token
             return "ragflow-response"
 
     service = routes.QuestionService.demo()
     service.retrieval_engine = "ragflow_compat"
     service.ragflow_retrieval_service = FakeRagflowService()
 
-    assert service.answer("失眠怎么辨证？", comm_topn=2) == "ragflow-response"
+    assert service.answer("失眠怎么辨证？", comm_topn=2, max_token=128) == "ragflow-response"
     assert captured["question"] == "失眠怎么辨证？"
     assert captured["comm_topn"] == 2
+    assert captured["max_token"] == 128
 
 
 class FixedRouteExtractor:
