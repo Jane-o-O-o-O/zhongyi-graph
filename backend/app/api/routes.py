@@ -1,8 +1,21 @@
+import json
+from dataclasses import asdict
+from pathlib import Path
+import tempfile
+
+import httpx
 from fastapi import APIRouter, UploadFile
 
 from app.core.config import get_settings
+from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import IngestionJob, SourceManifest
-from app.models.query import GraphOverviewResponse, QueryRequest, QueryResponse
+from app.models.query import (
+    GraphBuildRequest,
+    GraphBuildResponse,
+    GraphOverviewResponse,
+    QueryRequest,
+    QueryResponse,
+)
 from app.services.ingestion_service import IngestionService
 from app.services.document_parser import DocumentParser
 from app.services.ingestion_repository import IngestionRepository
@@ -10,18 +23,17 @@ from app.services.object_storage import LocalObjectStorage, MinioObjectStorage
 from app.services.ocr_client import OcrClient
 from app.services.neo4j_publisher import Neo4jPublisher
 from app.services.chunk_retriever import ChunkRetriever
+from app.services.graph_service import GraphService
 from app.services.question_service import QuestionService
 from app.services.graph_extractor import GraphExtractor
 from app.services.model_clients import StructuredExtractionClient
 from app.services.ragflow_compat.doc_store import RagflowDocStore, RagflowVectorSearchClient
 from app.services.ragflow_compat.fulltext import RagflowFulltextRetriever
+from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
 from app.services.ragflow_compat.kg_search import RagflowKgSearch
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.retrieval_service import RagflowCompatibleRetrievalService
 from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
-from pathlib import Path
-import httpx
-import tempfile
 
 router = APIRouter(prefix="/api")
 settings = get_settings()
@@ -214,6 +226,37 @@ def rebuild_ragflow_retrieval_index() -> dict:
         graph_service=question_service.graph_service,
     ).rebuild_from_ingestion()
     return {"status": "ok", **summary}
+
+
+@router.post("/retrieval/graphrag/build", response_model=GraphBuildResponse)
+def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBuildResponse:
+    request = request or GraphBuildRequest()
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=ragflow_repository,
+        graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
+    ).build(request.source_ids)
+    graph_refreshed = _refresh_question_graph_from_ragflow_global_artifact()
+    return GraphBuildResponse(
+        status="ok",
+        graph_refreshed=graph_refreshed,
+        **asdict(summary),
+    )
+
+
+def _refresh_question_graph_from_ragflow_global_artifact() -> bool:
+    artifact = ragflow_repository.get_graph_artifact("graph:global")
+    if not artifact:
+        return False
+    payload = json.loads(artifact.content_with_weight)
+    nodes = [GraphNode.model_validate(node) for node in payload.get("nodes", [])]
+    edges = [GraphEdge.model_validate(edge) for edge in payload.get("edges", [])]
+    if not nodes:
+        return False
+    graph_service = GraphService(nodes, edges)
+    question_service.graph_service = graph_service
+    question_service.hybrid_retriever.graph_service = graph_service
+    return True
 
 
 @router.get("/retrieval/audit")
