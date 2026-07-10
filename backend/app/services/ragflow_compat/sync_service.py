@@ -10,6 +10,7 @@ from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandida
 from app.services.graph_analytics_service import GraphAnalyticsService
 from app.services.graph_service import GraphService
 from app.services.ingestion_repository import IngestionRepository
+from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.query import build_content_with_weight, tokenize_query
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
@@ -121,8 +122,8 @@ class RagflowRetrievalSyncService:
         self.retrieval_repository.append_graph_artifacts(graph_artifacts)
         self.retrieval_repository.append_type_samples(retrieval_type_samples)
         if graph_branch:
-            self.retrieval_repository.set_graphrag_phase_marker("resolution_done")
-            self.retrieval_repository.set_graphrag_phase_marker("community_done")
+            self.retrieval_repository.set_graphrag_phase_marker(PHASE_RESOLUTION)
+            self.retrieval_repository.set_graphrag_phase_marker(PHASE_COMMUNITY)
         return {
             "documents": len(retrieval_documents),
             "chunks": chunk_count,
