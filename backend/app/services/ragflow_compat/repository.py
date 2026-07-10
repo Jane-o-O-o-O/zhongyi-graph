@@ -112,6 +112,14 @@ class RagflowRetrievalRepository:
     def replace_graph_artifacts(self, artifacts: list[RetrievalGraphArtifact]) -> None:
         self._replace_all(retrieval_kg_graph_artifacts_table, [_row(artifact) for artifact in artifacts])
 
+    def save_graph_artifact(self, artifact: RetrievalGraphArtifact) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(retrieval_kg_graph_artifacts_table)
+                .where(retrieval_kg_graph_artifacts_table.c.artifact_id == artifact.artifact_id)
+            )
+            connection.execute(retrieval_kg_graph_artifacts_table.insert(), _row(artifact))
+
     def replace_type_samples(self, samples: list[RetrievalTypeSamples]) -> None:
         self._replace_all(retrieval_kg_type_samples_table, [_row(sample) for sample in samples])
 
@@ -454,6 +462,45 @@ class RagflowRetrievalRepository:
                 RetrievalGraphArtifact(**dict(row._mapping))
                 for row in connection.execute(statement)
             ]
+
+    def get_graph_artifact(
+        self,
+        artifact_id: str,
+        *,
+        available_only: bool = False,
+    ) -> RetrievalGraphArtifact | None:
+        if not artifact_id:
+            return None
+        statement = select(retrieval_kg_graph_artifacts_table).where(
+            retrieval_kg_graph_artifacts_table.c.artifact_id == artifact_id
+        )
+        if available_only:
+            statement = statement.where(retrieval_kg_graph_artifacts_table.c.available_int == 1)
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            return RetrievalGraphArtifact(**dict(row._mapping)) if row else None
+
+    def get_subgraph_artifact(
+        self,
+        source_id: str,
+        *,
+        available_only: bool = True,
+    ) -> RetrievalGraphArtifact | None:
+        if not source_id:
+            return None
+        statement = (
+            select(retrieval_kg_graph_artifacts_table)
+            .where(retrieval_kg_graph_artifacts_table.c.artifact_type == "subgraph")
+            .order_by(retrieval_kg_graph_artifacts_table.c.artifact_id)
+        )
+        if available_only:
+            statement = statement.where(retrieval_kg_graph_artifacts_table.c.available_int == 1)
+        with self.engine.begin() as connection:
+            for row in connection.execute(statement):
+                artifact = RetrievalGraphArtifact(**dict(row._mapping))
+                if source_id in {str(value) for value in artifact.source_id}:
+                    return artifact
+        return None
 
     def list_type_samples(self) -> list[RetrievalTypeSamples]:
         return self._list_all(

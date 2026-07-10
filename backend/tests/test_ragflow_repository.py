@@ -141,6 +141,55 @@ def test_repository_round_trips_retrieval_rows():
     assert repository.list_type_samples() == [samples]
 
 
+def test_repository_saves_and_loads_graph_artifact_checkpoints_by_source():
+    repository = _repository()
+    global_artifact = RetrievalGraphArtifact(
+        artifact_id="graph:global",
+        artifact_type="graph",
+        content_with_weight='{"nodes":["全局"],"edges":[]}',
+        source_id=["doc:a"],
+        node_count=1,
+        edge_count=0,
+    )
+    subgraph_a = RetrievalGraphArtifact(
+        artifact_id="subgraph:doc:a",
+        artifact_type="subgraph",
+        content_with_weight='{"nodes":["白芍"],"edges":[]}',
+        source_id=["doc:a"],
+        node_count=1,
+        edge_count=0,
+    )
+    subgraph_b = RetrievalGraphArtifact(
+        artifact_id="subgraph:doc:b",
+        artifact_type="subgraph",
+        content_with_weight='{"nodes":["柴胡"],"edges":[]}',
+        source_id=["doc:b"],
+        node_count=1,
+        edge_count=0,
+    )
+
+    repository.save_graph_artifact(global_artifact)
+    repository.save_graph_artifact(subgraph_a)
+    repository.save_graph_artifact(subgraph_b)
+
+    assert repository.get_graph_artifact("graph:global") == global_artifact
+    assert repository.get_subgraph_artifact("doc:a") == subgraph_a
+    assert repository.get_subgraph_artifact("doc:missing") is None
+
+    replacement = RetrievalGraphArtifact(
+        artifact_id="subgraph:doc:a",
+        artifact_type="subgraph",
+        content_with_weight='{"nodes":["白芍","白芍药"],"edges":[]}',
+        source_id=["doc:a"],
+        node_count=2,
+        edge_count=0,
+    )
+    repository.save_graph_artifact(replacement)
+
+    assert repository.get_subgraph_artifact("doc:a") == replacement
+    assert repository.get_graph_artifact("graph:global") == global_artifact
+
+
 def test_repository_manages_graphrag_checkpoints_and_phase_markers():
     repository = _repository()
 
