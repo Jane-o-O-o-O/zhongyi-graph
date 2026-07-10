@@ -42,8 +42,9 @@ class RagflowKgSearch:
         ent_sim_threshold: float = 0.0,
         rel_sim_threshold: float = 0.0,
     ) -> KgSearchResult:
+        entity_query = ", ".join(entities_from_query) if entities_from_query else question
         entity_hits = self.doc_store.search_entities(
-            question,
+            entity_query,
             entities_from_query,
             top_k=56,
             sim_threshold=ent_sim_threshold,

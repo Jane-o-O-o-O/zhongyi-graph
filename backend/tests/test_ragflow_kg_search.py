@@ -2,7 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.services.model_clients import EmbeddingClient
-from app.services.ragflow_compat.doc_store import RagflowDocStore
+from app.services.ragflow_compat.doc_store import EntitySearchHit, RagflowDocStore
 from app.services.ragflow_compat.kg_search import RagflowKgSearch
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
@@ -11,6 +11,58 @@ from app.services.ragflow_compat.schemas import (
     RetrievalKgRelation,
     RetrievalTypeSamples,
 )
+
+
+def test_kg_search_uses_query_entities_for_entity_retrieval_query():
+    class EmptyRepository:
+        def list_kg_entities(self, *, available_only=False):
+            del available_only
+            return []
+
+    class RecordingDocStore:
+        def __init__(self):
+            self.repository = EmptyRepository()
+            self.entity_calls = []
+
+        def search_entities(self, query, keywords, **kwargs):
+            self.entity_calls.append((query, keywords, kwargs))
+            return [
+                EntitySearchHit(
+                    entity=RetrievalKgEntity(
+                        entity_id="entity:归脾汤",
+                        entity_name="归脾汤",
+                        entity_type="Formula",
+                        source_node_id="formula:归脾汤",
+                        content_with_weight='{"description":"归脾汤 Formula"}',
+                        rank_flt=1.0,
+                    ),
+                    score=1.0,
+                )
+            ]
+
+        def search_relations(self, query, **kwargs):
+            del query, kwargs
+            return []
+
+        def search_community_reports(self, entities, *, top_k=1):
+            del entities, top_k
+            return []
+
+    doc_store = RecordingDocStore()
+
+    RagflowKgSearch(doc_store).retrieve(
+        "睡不着用什么方？",
+        answer_type_keywords=[],
+        entities_from_query=["失眠", "归脾汤"],
+    )
+
+    assert doc_store.entity_calls == [
+        (
+            "失眠, 归脾汤",
+            ["失眠", "归脾汤"],
+            {"top_k": 56, "sim_threshold": 0.0},
+        )
+    ]
 
 
 def test_kg_search_combines_entity_type_relation_and_nhop_scores():
