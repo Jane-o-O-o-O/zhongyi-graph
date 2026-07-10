@@ -154,7 +154,15 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
 
     response = TestClient(app).post(
         "/api/retrieval/graphrag/build",
-        json={"source_ids": ["doc:a"], "with_resolution": False, "with_community": False},
+        json={
+            "source_ids": ["doc:a"],
+            "with_resolution": False,
+            "with_community": False,
+            "retry_attempts": 3,
+            "retry_backoff_seconds": 1.5,
+            "retry_backoff_max_seconds": 4.0,
+            "source_timeout_seconds": 10.0,
+        },
     )
 
     assert response.status_code == 200
@@ -191,6 +199,10 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     assert run_body["processed"] == 1
     assert run_body["failed"] == 0
     assert run_body["metadata"]["source_ids"] == ["doc:a"]
+    assert run_body["metadata"]["retry_attempts"] == 3
+    assert run_body["metadata"]["retry_backoff_seconds"] == 1.5
+    assert run_body["metadata"]["retry_backoff_max_seconds"] == 4.0
+    assert run_body["metadata"]["source_timeout_seconds"] == 10.0
     assert run_body["metadata"]["summary"]["global_nodes"] == 2
     assert retrieval_repository.claim_graphrag_build_lock(
         "graphrag:build:next",

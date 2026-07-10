@@ -39,6 +39,10 @@ class GraphBuildRequest(BaseModel):
     source_ids: list[str] | None = None
     with_resolution: bool = True
     with_community: bool = True
+    retry_attempts: int = Field(default=2, ge=1, le=10)
+    retry_backoff_seconds: float = Field(default=2.0, ge=0.0, le=300.0)
+    retry_backoff_max_seconds: float = Field(default=60.0, ge=0.0, le=3600.0)
+    source_timeout_seconds: float = Field(default=600.0, ge=0.0, le=86400.0)
 
     @field_validator("source_ids", mode="before")
     @classmethod

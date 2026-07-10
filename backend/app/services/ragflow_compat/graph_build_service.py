@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 import json
+import time
 from uuid import uuid4
 
 from app.models.graph import GraphEdge, GraphNode
@@ -63,6 +64,11 @@ class RagflowGraphBuildService:
         community_report_service: RagflowGraphCommunityReportService | None = None,
         chunk_batch_size: int = 1000,
         retry_attempts: int = 2,
+        retry_backoff_seconds: float = 2.0,
+        retry_backoff_max_seconds: float = 60.0,
+        source_timeout_seconds: float = 600.0,
+        sleep_fn=time.sleep,
+        monotonic_fn=time.monotonic,
     ):
         self.ingestion_repository = ingestion_repository
         self.retrieval_repository = retrieval_repository
@@ -75,6 +81,14 @@ class RagflowGraphBuildService:
         )
         self.chunk_batch_size = chunk_batch_size
         self.retry_attempts = max(1, retry_attempts)
+        self.retry_backoff_seconds = max(0.0, retry_backoff_seconds)
+        self.retry_backoff_max_seconds = max(
+            self.retry_backoff_seconds,
+            retry_backoff_max_seconds,
+        )
+        self.source_timeout_seconds = max(0.0, source_timeout_seconds)
+        self.sleep_fn = sleep_fn
+        self.monotonic_fn = monotonic_fn
 
     def build(
         self,
@@ -93,6 +107,10 @@ class RagflowGraphBuildService:
                 "source_ids": selected_source_ids,
                 "with_resolution": with_resolution,
                 "with_community": with_community,
+                "retry_attempts": self.retry_attempts,
+                "retry_backoff_seconds": self.retry_backoff_seconds,
+                "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
+                "source_timeout_seconds": self.source_timeout_seconds,
             },
         ):
             raise RagflowGraphBuildAlreadyRunningError("GraphRAG build is already running")
@@ -109,6 +127,10 @@ class RagflowGraphBuildService:
                     "source_ids": selected_source_ids,
                     "with_resolution": with_resolution,
                     "with_community": with_community,
+                    "retry_attempts": self.retry_attempts,
+                    "retry_backoff_seconds": self.retry_backoff_seconds,
+                    "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
+                    "source_timeout_seconds": self.source_timeout_seconds,
                 },
             )
             try:
@@ -147,6 +169,10 @@ class RagflowGraphBuildService:
                         "source_ids": selected_source_ids,
                         "with_resolution": with_resolution,
                         "with_community": with_community,
+                        "retry_attempts": self.retry_attempts,
+                        "retry_backoff_seconds": self.retry_backoff_seconds,
+                        "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
+                        "source_timeout_seconds": self.source_timeout_seconds,
                         "error": repr(exc),
                     },
                 )
@@ -163,6 +189,10 @@ class RagflowGraphBuildService:
                     "source_ids": selected_source_ids,
                     "with_resolution": with_resolution,
                     "with_community": with_community,
+                    "retry_attempts": self.retry_attempts,
+                    "retry_backoff_seconds": self.retry_backoff_seconds,
+                    "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
+                    "source_timeout_seconds": self.source_timeout_seconds,
                     "summary": asdict(summary),
                     "source_events": summary.source_events,
                 },
@@ -348,12 +378,30 @@ class RagflowGraphBuildService:
         last_error = None
         for attempt in range(1, self.retry_attempts + 1):
             try:
-                return self.graph_extractor.extract(chunks)
+                started_at = self.monotonic_fn()
+                result = self.graph_extractor.extract(chunks)
+                elapsed = self.monotonic_fn() - started_at
+                if self.source_timeout_seconds and elapsed > self.source_timeout_seconds:
+                    raise TimeoutError(
+                        f"GraphRAG source extraction timed out after {elapsed:.3f}s"
+                    )
+                return result
             except Exception as exc:
                 last_error = exc
                 if attempt >= self.retry_attempts:
                     raise
+                self._sleep_before_retry(attempt)
         raise last_error or RuntimeError("GraphRAG source extraction failed")
+
+    def _sleep_before_retry(self, failed_attempt: int) -> None:
+        if self.retry_backoff_seconds <= 0:
+            return
+        wait_seconds = min(
+            self.retry_backoff_max_seconds,
+            self.retry_backoff_seconds * (2 ** (failed_attempt - 1)),
+        )
+        if wait_seconds > 0:
+            self.sleep_fn(wait_seconds)
 
     def _source_ids(self, source_ids: list[str] | None) -> list[str]:
         if source_ids is not None:
@@ -440,6 +488,10 @@ class RagflowGraphBuildService:
             "source_ids": selected_source_ids,
             "with_resolution": with_resolution,
             "with_community": with_community,
+            "retry_attempts": self.retry_attempts,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+            "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
+            "source_timeout_seconds": self.source_timeout_seconds,
             "current_source_id": current_source_id,
             "source_events": list(source_events),
         }

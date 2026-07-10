@@ -180,6 +180,40 @@ class FlakyExtractor:
         return FixedExtractor().extract(chunks, hint_terms=hint_terms)
 
 
+class TwiceFlakyExtractor:
+    def __init__(self):
+        self.calls = 0
+
+    def extract(self, chunks, hint_terms=None):
+        self.calls += 1
+        if self.calls < 3:
+            raise RuntimeError("transient extractor failure")
+        return FixedExtractor().extract(chunks, hint_terms=hint_terms)
+
+
+class AdvancingClock:
+    def __init__(self):
+        self.value = 0.0
+
+    def now(self):
+        return self.value
+
+    def advance(self, seconds: float) -> None:
+        self.value += seconds
+
+
+class SlowSuccessfulExtractor:
+    def __init__(self, clock: AdvancingClock, elapsed_seconds: float):
+        self.clock = clock
+        self.elapsed_seconds = elapsed_seconds
+        self.calls = 0
+
+    def extract(self, chunks, hint_terms=None):
+        self.calls += 1
+        self.clock.advance(self.elapsed_seconds)
+        return FixedExtractor().extract(chunks, hint_terms=hint_terms)
+
+
 class CancelAfterFirstSourceExtractor:
     def __init__(self, repository: RecordingRunRepository):
         self.repository = repository
@@ -302,6 +336,54 @@ def test_build_retries_transient_source_extraction_failure():
     assert summary.sources_built == 1
     assert summary.sources_failed == 0
     assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
+
+
+def test_build_waits_with_capped_exponential_backoff_between_retries():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    sleep_calls: list[float] = []
+    extractor = TwiceFlakyExtractor()
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=extractor,
+        retry_attempts=3,
+        retry_backoff_seconds=2.0,
+        retry_backoff_max_seconds=3.0,
+        sleep_fn=sleep_calls.append,
+    ).build(["doc:a"], with_resolution=False, with_community=False)
+
+    assert extractor.calls == 3
+    assert sleep_calls == [2.0, 3.0]
+    assert summary.sources_built == 1
+    assert summary.sources_failed == 0
+
+
+def test_build_marks_source_failed_when_extraction_exceeds_timeout():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    clock = AdvancingClock()
+    extractor = SlowSuccessfulExtractor(clock, elapsed_seconds=5.0)
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=extractor,
+        retry_attempts=1,
+        source_timeout_seconds=2.0,
+        monotonic_fn=clock.now,
+    ).build(["doc:a"], with_resolution=False, with_community=False)
+
+    assert extractor.calls == 1
+    assert summary.sources_built == 0
+    assert summary.sources_failed == 1
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is None
+    assert summary.source_events == [
+        {"source_id": "doc:a", "status": "failed", "processed": 1, "failed": 1}
+    ]
 
 
 def test_build_records_per_source_progress_in_run_state():

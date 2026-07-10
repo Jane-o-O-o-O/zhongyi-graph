@@ -251,6 +251,10 @@ def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBui
             community_report_service=RagflowGraphCommunityReportService(
                 report_client=structured_extractor
             ),
+            retry_attempts=request.retry_attempts,
+            retry_backoff_seconds=request.retry_backoff_seconds,
+            retry_backoff_max_seconds=request.retry_backoff_max_seconds,
+            source_timeout_seconds=request.source_timeout_seconds,
         ).build(
             request.source_ids,
             with_resolution=request.with_resolution,
