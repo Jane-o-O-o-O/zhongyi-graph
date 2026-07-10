@@ -191,6 +191,11 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     assert run_body["failed"] == 0
     assert run_body["metadata"]["source_ids"] == ["doc:a"]
     assert run_body["metadata"]["summary"]["global_nodes"] == 2
+    assert retrieval_repository.claim_graphrag_build_lock(
+        "graphrag:build:next",
+        started_at="2026-07-10T00:00:00Z",
+        metadata={},
+    )
 
 
 def test_graphrag_build_endpoint_uses_llm_resolution_client(monkeypatch):
@@ -244,6 +249,44 @@ def test_graphrag_build_endpoint_uses_llm_resolution_client(monkeypatch):
     assert body["resolution_pairs_resolved"] == 1
     assert body["resolution_pairs_merged"] == 1
     assert resolution_client.calls == [("Herb", [("白芍", "白芍药")])]
+
+
+def test_graphrag_build_endpoint_rejects_concurrent_build(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    ingestion_repository = IngestionRepository(engine)
+    retrieval_repository = RagflowRetrievalRepository(engine)
+    ingestion_repository.upsert_source(
+        SourceManifest(
+            source_id="doc:a",
+            filename="doc:a.txt",
+            mime_type="text/plain",
+            checksum="checksum:doc:a",
+            status="parsed",
+        )
+    )
+    retrieval_repository.claim_graphrag_build_lock(
+        "graphrag:build:already-running",
+        started_at="2026-07-10T00:00:00Z",
+        metadata={"source_ids": ["doc:other"]},
+    )
+    question_service = routes.QuestionService.demo()
+    monkeypatch.setattr(routes, "ingestion_repository", ingestion_repository)
+    monkeypatch.setattr(routes, "ragflow_repository", retrieval_repository)
+    monkeypatch.setattr(routes, "question_service", question_service)
+    monkeypatch.setattr(routes, "GraphExtractor", lambda llm_extractor=None: FixedRouteExtractor())
+
+    response = TestClient(app).post(
+        "/api/retrieval/graphrag/build",
+        json={"source_ids": ["doc:a"], "with_resolution": False, "with_community": False},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "GraphRAG build is already running"
 
 
 def test_graphrag_build_endpoint_uses_llm_community_report_client(monkeypatch):

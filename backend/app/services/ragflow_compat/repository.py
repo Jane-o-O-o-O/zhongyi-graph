@@ -36,6 +36,7 @@ from app.services.ragflow_compat.tables import (
 )
 
 T = TypeVar("T")
+GRAPHRAG_BUILD_LOCK_KEY = "graphrag:build:lock"
 
 
 @dataclass(frozen=True)
@@ -255,6 +256,77 @@ class RagflowRetrievalRepository:
             if not row:
                 return None
             return _graphrag_build_run_from_row(row._mapping)
+
+    def claim_graphrag_build_lock(
+        self,
+        run_id: str,
+        *,
+        started_at: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        if not run_id:
+            return False
+        if self.engine.dialect.name != "postgresql":
+            with self._claim_lock:
+                return self._claim_graphrag_build_lock(
+                    run_id,
+                    started_at=started_at,
+                    metadata=metadata,
+                )
+        return self._claim_graphrag_build_lock(
+            run_id,
+            started_at=started_at,
+            metadata=metadata,
+        )
+
+    def _claim_graphrag_build_lock(
+        self,
+        run_id: str,
+        *,
+        started_at: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        with self.engine.begin() as connection:
+            current = connection.execute(
+                select(
+                    retrieval_sync_state_table.c.status,
+                    retrieval_sync_state_table.c.cursor,
+                )
+                .where(retrieval_sync_state_table.c.sync_key == GRAPHRAG_BUILD_LOCK_KEY)
+                .limit(1)
+            ).first()
+            if current and current.status == "running":
+                return False
+            connection.execute(
+                delete(retrieval_sync_state_table)
+                .where(retrieval_sync_state_table.c.sync_key == GRAPHRAG_BUILD_LOCK_KEY)
+            )
+            connection.execute(
+                retrieval_sync_state_table.insert(),
+                {
+                    "sync_key": GRAPHRAG_BUILD_LOCK_KEY,
+                    "status": "running",
+                    "started_at": started_at,
+                    "finished_at": "",
+                    "cursor": run_id,
+                    "total": 1,
+                    "processed": 0,
+                    "failed": 0,
+                    "metadata": metadata,
+                },
+            )
+        return True
+
+    def release_graphrag_build_lock(self, run_id: str) -> None:
+        if not run_id:
+            return
+        with self.engine.begin() as connection:
+            connection.execute(
+                retrieval_sync_state_table.update()
+                .where(retrieval_sync_state_table.c.sync_key == GRAPHRAG_BUILD_LOCK_KEY)
+                .where(retrieval_sync_state_table.c.cursor == run_id)
+                .values(status="released", finished_at=_utc_now(), processed=1)
+            )
 
     def update_chunk_vector_status(self, chunk_id: str, *, point_id: str, status: str) -> None:
         if self.engine.dialect.name != "postgresql":

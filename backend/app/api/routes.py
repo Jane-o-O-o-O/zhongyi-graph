@@ -35,7 +35,10 @@ from app.services.ragflow_compat.entity_resolution import (
     RagflowGraphEntityResolutionService,
 )
 from app.services.ragflow_compat.fulltext import RagflowFulltextRetriever
-from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
+from app.services.ragflow_compat.graph_build_service import (
+    RagflowGraphBuildAlreadyRunningError,
+    RagflowGraphBuildService,
+)
 from app.services.ragflow_compat.kg_search import RagflowKgSearch
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.retrieval_service import RagflowCompatibleRetrievalService
@@ -237,21 +240,24 @@ def rebuild_ragflow_retrieval_index() -> dict:
 @router.post("/retrieval/graphrag/build", response_model=GraphBuildResponse)
 def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBuildResponse:
     request = request or GraphBuildRequest()
-    summary = RagflowGraphBuildService(
-        ingestion_repository=ingestion_repository,
-        retrieval_repository=ragflow_repository,
-        graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
-        entity_resolution_service=RagflowGraphEntityResolutionService(
-            decider=LlmEntityResolutionDecider(structured_extractor)
-        ),
-        community_report_service=RagflowGraphCommunityReportService(
-            report_client=structured_extractor
-        ),
-    ).build(
-        request.source_ids,
-        with_resolution=request.with_resolution,
-        with_community=request.with_community,
-    )
+    try:
+        summary = RagflowGraphBuildService(
+            ingestion_repository=ingestion_repository,
+            retrieval_repository=ragflow_repository,
+            graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
+            entity_resolution_service=RagflowGraphEntityResolutionService(
+                decider=LlmEntityResolutionDecider(structured_extractor)
+            ),
+            community_report_service=RagflowGraphCommunityReportService(
+                report_client=structured_extractor
+            ),
+        ).build(
+            request.source_ids,
+            with_resolution=request.with_resolution,
+            with_community=request.with_community,
+        )
+    except RagflowGraphBuildAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     graph_refreshed = _refresh_question_graph_from_ragflow_global_artifact()
     return GraphBuildResponse(
         status="ok",

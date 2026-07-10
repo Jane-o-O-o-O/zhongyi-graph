@@ -261,6 +261,29 @@ def test_repository_persists_graphrag_build_runs_in_sync_state():
     assert repository.get_graphrag_build_run("missing") is None
 
 
+def test_repository_claims_and_releases_graphrag_build_lock():
+    repository = _repository()
+
+    assert repository.claim_graphrag_build_lock(
+        "graphrag:build:first",
+        started_at="2026-07-10T00:00:00Z",
+        metadata={"source_ids": ["doc:a"]},
+    )
+    assert not repository.claim_graphrag_build_lock(
+        "graphrag:build:second",
+        started_at="2026-07-10T00:00:01Z",
+        metadata={"source_ids": ["doc:b"]},
+    )
+
+    repository.release_graphrag_build_lock("graphrag:build:first")
+
+    assert repository.claim_graphrag_build_lock(
+        "graphrag:build:second",
+        started_at="2026-07-10T00:00:02Z",
+        metadata={"source_ids": ["doc:b"]},
+    )
+
+
 def test_repository_audit_counts_vectors_and_chunk_lengths():
     repository = _repository()
     repository.replace_documents(

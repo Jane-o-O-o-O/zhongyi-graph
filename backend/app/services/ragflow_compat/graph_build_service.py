@@ -43,6 +43,10 @@ class RagflowGraphBuildSummary:
     community_reports_generated: int = 0
 
 
+class RagflowGraphBuildAlreadyRunningError(RuntimeError):
+    pass
+
+
 class RagflowGraphBuildService:
     def __init__(
         self,
@@ -75,60 +79,73 @@ class RagflowGraphBuildService:
         run_id = f"graphrag:build:{uuid4().hex}"
         started_at = _utc_now()
         selected_source_ids = self._source_ids(source_ids)
-        self._save_build_run(
-            run_id=run_id,
-            status="running",
+        if not self.retrieval_repository.claim_graphrag_build_lock(
+            run_id,
             started_at=started_at,
-            finished_at="",
-            total=len(selected_source_ids),
-            processed=0,
-            failed=0,
             metadata={
                 "source_ids": selected_source_ids,
                 "with_resolution": with_resolution,
                 "with_community": with_community,
             },
-        )
+        ):
+            raise RagflowGraphBuildAlreadyRunningError("GraphRAG build is already running")
         try:
-            summary = self._build_selected_sources(
-                run_id=run_id,
-                selected_source_ids=selected_source_ids,
-                with_resolution=with_resolution,
-                with_community=with_community,
-            )
-        except Exception as exc:
             self._save_build_run(
                 run_id=run_id,
-                status="failed",
+                status="running",
                 started_at=started_at,
-                finished_at=_utc_now(),
+                finished_at="",
                 total=len(selected_source_ids),
                 processed=0,
-                failed=1,
+                failed=0,
                 metadata={
                     "source_ids": selected_source_ids,
                     "with_resolution": with_resolution,
                     "with_community": with_community,
-                    "error": repr(exc),
                 },
             )
-            raise
-        self._save_build_run(
-            run_id=run_id,
-            status="completed",
-            started_at=started_at,
-            finished_at=_utc_now(),
-            total=summary.sources_total,
-            processed=summary.sources_total,
-            failed=summary.sources_failed,
-            metadata={
-                "source_ids": selected_source_ids,
-                "with_resolution": with_resolution,
-                "with_community": with_community,
-                "summary": asdict(summary),
-            },
-        )
-        return summary
+            try:
+                summary = self._build_selected_sources(
+                    run_id=run_id,
+                    selected_source_ids=selected_source_ids,
+                    with_resolution=with_resolution,
+                    with_community=with_community,
+                )
+            except Exception as exc:
+                self._save_build_run(
+                    run_id=run_id,
+                    status="failed",
+                    started_at=started_at,
+                    finished_at=_utc_now(),
+                    total=len(selected_source_ids),
+                    processed=0,
+                    failed=1,
+                    metadata={
+                        "source_ids": selected_source_ids,
+                        "with_resolution": with_resolution,
+                        "with_community": with_community,
+                        "error": repr(exc),
+                    },
+                )
+                raise
+            self._save_build_run(
+                run_id=run_id,
+                status="completed",
+                started_at=started_at,
+                finished_at=_utc_now(),
+                total=summary.sources_total,
+                processed=summary.sources_total,
+                failed=summary.sources_failed,
+                metadata={
+                    "source_ids": selected_source_ids,
+                    "with_resolution": with_resolution,
+                    "with_community": with_community,
+                    "summary": asdict(summary),
+                },
+            )
+            return summary
+        finally:
+            self.retrieval_repository.release_graphrag_build_lock(run_id)
 
     def _build_selected_sources(
         self,
