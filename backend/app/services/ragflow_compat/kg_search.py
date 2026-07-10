@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 
 from app.models.graph import GraphEdge, GraphNode
+from app.services.ragflow_compat.schemas import RetrievalCommunityReport
 from app.services.ragflow_compat.doc_store import RagflowDocStore
 from app.services.ragflow_compat.scoring import (
     ScoredEntity,
@@ -20,6 +21,7 @@ from app.services.ragflow_compat.scoring import (
 class KgSearchResult:
     entities: list[ScoredEntity]
     relations: list[ScoredRelation]
+    community_reports: list[RetrievalCommunityReport]
     graph_nodes: list[GraphNode]
     graph_edges: list[GraphEdge]
 
@@ -77,11 +79,19 @@ class RagflowKgSearch:
         fuse_relation_scores(rels, type_names, nhop_paths)
         scored_entities = sort_entities(ents, top_n=ent_topn)
         scored_relations = sort_relations(rels, top_n=rel_topn)
+        community_reports = [
+            hit.report
+            for hit in self.doc_store.search_community_reports(
+                [entity.entity for entity in scored_entities],
+                top_k=1,
+            )
+        ]
         graph_nodes = self._graph_nodes(scored_entities, ents)
         graph_edges = self._graph_edges(scored_relations, rels)
         return KgSearchResult(
             entities=scored_entities,
             relations=scored_relations,
+            community_reports=community_reports,
             graph_nodes=graph_nodes,
             graph_edges=graph_edges,
         )

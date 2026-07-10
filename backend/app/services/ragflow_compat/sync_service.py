@@ -13,6 +13,7 @@ from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.query import build_content_with_weight, tokenize_query
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
+    RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalChunkTerm,
     RetrievalDocument,
@@ -79,6 +80,7 @@ class RagflowRetrievalSyncService:
                 self.graph_service,
                 evidence_lookup,
             )
+            community_reports = self._community_reports_from_graph(self.graph_service)
         else:
             retrieval_entities = [
                 self._entity_from_candidate(source_id, entity)
@@ -88,6 +90,7 @@ class RagflowRetrievalSyncService:
                 self._relation_from_candidate(source_id, relation, entity_lookup)
                 for source_id, relation in relations_with_source
             ]
+            community_reports = []
         retrieval_type_samples = self._type_samples(retrieval_entities)
 
         self.retrieval_repository.clear_rebuild_tables()
@@ -110,12 +113,14 @@ class RagflowRetrievalSyncService:
             chunk_count += len(retrieval_chunks)
         self.retrieval_repository.append_kg_entities(retrieval_entities)
         self.retrieval_repository.append_kg_relations(retrieval_relations)
+        self.retrieval_repository.append_community_reports(community_reports)
         self.retrieval_repository.append_type_samples(retrieval_type_samples)
         return {
             "documents": len(retrieval_documents),
             "chunks": chunk_count,
             "kg_entities": len(retrieval_entities),
             "kg_relations": len(retrieval_relations),
+            "community_reports": len(community_reports),
         }
 
     def _document_from_source(
@@ -291,6 +296,36 @@ class RagflowRetrievalSyncService:
             )
         return relations
 
+    def _community_reports_from_graph(
+        self,
+        graph_service: GraphService,
+    ) -> list[RetrievalCommunityReport]:
+        reports: list[RetrievalCommunityReport] = []
+        for community_id, summary in sorted(graph_service.community_summaries.by_community_id.items()):
+            content = {
+                "report": summary.summary,
+                "evidences": "；".join(summary.entities),
+                "title": summary.title,
+            }
+            reports.append(
+                RetrievalCommunityReport(
+                    report_id=f"community:{community_id}",
+                    title=summary.title,
+                    content_with_weight=json.dumps(content, ensure_ascii=False),
+                    summary=summary.summary,
+                    evidences=content["evidences"],
+                    entities_kwd=summary.entities,
+                    weight_flt=summary.weight,
+                    source_id=_community_source_ids(graph_service, community_id),
+                    metadata={
+                        "community_id": community_id,
+                        "community_size": summary.size,
+                        "label_counts": summary.label_counts,
+                    },
+                )
+            )
+        return reports
+
     def _terms_from_chunk(self, chunk: RetrievalChunk) -> list[RetrievalChunkTerm]:
         terms = [
             *(RetrievalChunkTerm(chunk.chunk_id, term, "content", 1.0) for term in chunk.content_ltks.split()),
@@ -378,6 +413,22 @@ def _chunk_ids_from_evidence_ids(evidence_ids: list[str]) -> list[str]:
         elif evidence_id.startswith("evidence:"):
             chunk_ids.append(evidence_id.replace("evidence:", "chunk:", 1))
     return chunk_ids
+
+
+def _community_source_ids(graph_service: GraphService, community_id: int) -> list[str]:
+    source_ids: list[str] = []
+    node_ids = {
+        node.id
+        for node in graph_service.nodes
+        if int(node.properties.get("community_id", -1)) == community_id
+    }
+    for node in graph_service.nodes:
+        if node.id in node_ids:
+            source_ids.extend(_source_chunks_from_graph_node(node))
+    for edge in graph_service.edges:
+        if edge.source in node_ids and edge.target in node_ids:
+            source_ids.extend(edge.evidence_ids)
+    return _unique(source_ids)
 
 
 def _n_hop_paths_from_graph(

@@ -92,6 +92,21 @@ retrieval_kg_relations_table = Table(
     Column("metadata", JSON, nullable=False, default=dict),
 )
 
+retrieval_kg_community_reports_table = Table(
+    "retrieval_kg_community_reports",
+    retrieval_metadata,
+    Column("report_id", String, primary_key=True),
+    Column("title", String, nullable=False, index=True),
+    Column("content_with_weight", Text, nullable=False),
+    Column("summary", Text, nullable=False, default=""),
+    Column("evidences", Text, nullable=False, default=""),
+    Column("entities_kwd", JSON, nullable=False, default=list),
+    Column("weight_flt", Float, nullable=False, default=0.0),
+    Column("source_id", JSON, nullable=False, default=list),
+    Column("available_int", Integer, nullable=False, default=1, index=True),
+    Column("metadata", JSON, nullable=False, default=dict),
+)
+
 retrieval_kg_type_samples_table = Table(
     "retrieval_kg_type_samples",
     retrieval_metadata,

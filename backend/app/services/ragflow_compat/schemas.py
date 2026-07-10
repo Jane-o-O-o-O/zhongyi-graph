@@ -90,6 +90,20 @@ class RetrievalKgRelation:
 
 
 @dataclass(frozen=True)
+class RetrievalCommunityReport:
+    report_id: str
+    title: str
+    content_with_weight: str
+    summary: str = ""
+    evidences: str = ""
+    entities_kwd: list[str] = field(default_factory=list)
+    weight_flt: float = 0.0
+    source_id: list[str] = field(default_factory=list)
+    available_int: int = 1
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RetrievalTypeSamples:
     entity_type: str
     sample_entities: list[str]
@@ -108,6 +122,7 @@ class RetrievalAudit:
     kg_entities_failed_vectors: int
     kg_entities_with_evidence: int
     kg_relations: int
+    community_reports: int
     kg_relations_with_vectors: int
     kg_relations_failed_vectors: int
     kg_relations_with_evidence: int

@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 
 from app.services.ragflow_compat.schemas import (
     RetrievalAudit,
+    RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
     RetrievalKgEntity,
@@ -21,6 +22,7 @@ from app.services.ragflow_compat.tables import (
     retrieval_chunks_table,
     retrieval_documents_table,
     retrieval_kg_entities_table,
+    retrieval_kg_community_reports_table,
     retrieval_kg_relations_table,
     retrieval_kg_type_samples_table,
     retrieval_metadata,
@@ -63,6 +65,7 @@ class RagflowRetrievalRepository:
                 retrieval_documents_table,
                 retrieval_kg_entities_table,
                 retrieval_kg_relations_table,
+                retrieval_kg_community_reports_table,
                 retrieval_kg_type_samples_table,
             ]:
                 connection.execute(delete(table))
@@ -82,6 +85,9 @@ class RagflowRetrievalRepository:
     def append_kg_relations(self, relations: list[RetrievalKgRelation]) -> None:
         self._append(retrieval_kg_relations_table, [_row(relation) for relation in relations])
 
+    def append_community_reports(self, reports: list[RetrievalCommunityReport]) -> None:
+        self._append(retrieval_kg_community_reports_table, [_row(report) for report in reports])
+
     def append_type_samples(self, samples: list[RetrievalTypeSamples]) -> None:
         self._append(retrieval_kg_type_samples_table, [_row(sample) for sample in samples])
 
@@ -90,6 +96,9 @@ class RagflowRetrievalRepository:
 
     def replace_kg_relations(self, relations: list[RetrievalKgRelation]) -> None:
         self._replace_all(retrieval_kg_relations_table, [_row(relation) for relation in relations])
+
+    def replace_community_reports(self, reports: list[RetrievalCommunityReport]) -> None:
+        self._replace_all(retrieval_kg_community_reports_table, [_row(report) for report in reports])
 
     def replace_type_samples(self, samples: list[RetrievalTypeSamples]) -> None:
         self._replace_all(retrieval_kg_type_samples_table, [_row(sample) for sample in samples])
@@ -282,6 +291,49 @@ class RagflowRetrievalRepository:
                 for row in connection.execute(statement)
             ]
 
+    def list_community_reports(
+        self,
+        *,
+        available_only: bool = False,
+    ) -> list[RetrievalCommunityReport]:
+        statement = select(retrieval_kg_community_reports_table).order_by(
+            retrieval_kg_community_reports_table.c.weight_flt.desc(),
+            retrieval_kg_community_reports_table.c.title,
+            retrieval_kg_community_reports_table.c.report_id,
+        )
+        if available_only:
+            statement = statement.where(retrieval_kg_community_reports_table.c.available_int == 1)
+        with self.engine.begin() as connection:
+            return [
+                RetrievalCommunityReport(**dict(row._mapping))
+                for row in connection.execute(statement)
+            ]
+
+    def search_community_reports(
+        self,
+        entities: list[str],
+        *,
+        limit: int = 1,
+    ) -> list[RetrievalCommunityReport]:
+        entity_set = set(_candidate_keywords(entities))
+        if not entity_set:
+            return []
+        reports = self.list_community_reports(available_only=True)
+        matched = [
+            report
+            for report in reports
+            if entity_set.intersection(str(entity) for entity in report.entities_kwd)
+        ]
+        matched.sort(
+            key=lambda report: (
+                len(entity_set.intersection(str(entity) for entity in report.entities_kwd)),
+                report.weight_flt,
+                report.title,
+            ),
+            reverse=True,
+        )
+        return matched[:limit]
+
     def list_type_samples(self) -> list[RetrievalTypeSamples]:
         return self._list_all(
             retrieval_kg_type_samples_table,
@@ -432,6 +484,7 @@ class RagflowRetrievalRepository:
                 func.json_array_length(retrieval_kg_entities_table.c.evidence_chunk_ids) > 0,
             )
             kg_relations = _count(connection, retrieval_kg_relations_table)
+            community_reports = _count(connection, retrieval_kg_community_reports_table)
             kg_relations_with_vectors = _count_where(
                 connection,
                 retrieval_kg_relations_table,
@@ -467,6 +520,7 @@ class RagflowRetrievalRepository:
             kg_entities_failed_vectors=kg_entities_failed_vectors,
             kg_entities_with_evidence=kg_entities_with_evidence,
             kg_relations=kg_relations,
+            community_reports=community_reports,
             kg_relations_with_vectors=kg_relations_with_vectors,
             kg_relations_failed_vectors=kg_relations_failed_vectors,
             kg_relations_with_evidence=kg_relations_with_evidence,
@@ -560,6 +614,7 @@ class RagflowRetrievalRepository:
             "chunks": audit.chunks,
             "kg_entities": audit.kg_entities,
             "kg_relations": audit.kg_relations,
+            "community_reports": audit.community_reports,
             "vector_coverage": vector_coverage,
             "evidence_coverage": evidence_coverage,
             "vector_sync_plan": vector_sync_plan,

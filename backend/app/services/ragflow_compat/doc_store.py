@@ -12,7 +12,12 @@ from app.services.ragflow_compat.query import (
     tokenize_query,
 )
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
-from app.services.ragflow_compat.schemas import RetrievalChunk, RetrievalKgEntity, RetrievalKgRelation
+from app.services.ragflow_compat.schemas import (
+    RetrievalChunk,
+    RetrievalCommunityReport,
+    RetrievalKgEntity,
+    RetrievalKgRelation,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,12 @@ class EntitySearchHit:
 @dataclass(frozen=True)
 class RelationSearchHit:
     relation: RetrievalKgRelation
+    score: float
+
+
+@dataclass(frozen=True)
+class CommunityReportSearchHit:
+    report: RetrievalCommunityReport
     score: float
 
 
@@ -292,6 +303,21 @@ class RagflowDocStore:
         ]
         hits.sort(key=lambda hit: hit.score, reverse=True)
         return hits[:top_k]
+
+    def search_community_reports(
+        self,
+        entities: list[str],
+        *,
+        top_k: int = 1,
+    ) -> list[CommunityReportSearchHit]:
+        reports = self.repository.search_community_reports(entities, limit=top_k)
+        return [
+            CommunityReportSearchHit(
+                report=report,
+                score=report.weight_flt,
+            )
+            for report in reports
+        ]
 
     def _hybrid_scores(
         self,

@@ -3,6 +3,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
+    RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
     RetrievalKgEntity,
@@ -31,6 +32,7 @@ def test_repository_creates_ragflow_compatible_tables():
         "retrieval_chunk_terms",
         "retrieval_kg_entities",
         "retrieval_kg_relations",
+        "retrieval_kg_community_reports",
         "retrieval_kg_type_samples",
         "retrieval_sync_state",
         "retrieval_query_logs",
@@ -98,17 +100,29 @@ def test_repository_round_trips_retrieval_rows():
         sample_count=2,
         updated_at="2026-06-28T00:00:00Z",
     )
+    community_report = RetrievalCommunityReport(
+        report_id="community:1",
+        title="失眠、心脾两虚",
+        content_with_weight="失眠、心脾两虚相关社区报告",
+        summary="失眠与心脾两虚相关",
+        evidences="图谱社区摘要",
+        entities_kwd=["失眠", "心脾两虚"],
+        weight_flt=0.9,
+        source_id=[document.doc_id],
+    )
 
     repository.replace_documents([document])
     repository.replace_chunks([chunk])
     repository.replace_kg_entities([entity])
     repository.replace_kg_relations([relation])
+    repository.replace_community_reports([community_report])
     repository.replace_type_samples([samples])
 
     assert repository.list_documents() == [document]
     assert repository.list_chunks() == [chunk]
     assert repository.list_kg_entities() == [entity]
     assert repository.list_kg_relations() == [relation]
+    assert repository.list_community_reports() == [community_report]
     assert repository.list_type_samples() == [samples]
 
 

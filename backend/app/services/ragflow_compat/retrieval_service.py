@@ -37,6 +37,10 @@ class RagflowCompatibleRetrievalService:
             entities_from_query=entities_from_query,
         )
         evidence = assemble_evidence_cards(fulltext.hits, kg.graph_edges)
+        community_evidence = [
+            report.summary or report.content_with_weight
+            for report in kg.community_reports
+        ]
         entities = _unique([entity.entity for entity in kg.entities] + entities_from_query)
         graph_paths = [
             f"{edge.source} -> {edge.display} -> {edge.target}"
@@ -45,7 +49,7 @@ class RagflowCompatibleRetrievalService:
         answer = self.llm_client.synthesize(
             question=question,
             entities=entities,
-            evidence=[card.snippet for card in evidence],
+            evidence=[card.snippet for card in evidence] + community_evidence,
             graph_paths=graph_paths,
         )
         return QueryResponse(
@@ -65,6 +69,7 @@ class RagflowCompatibleRetrievalService:
                 "chunk_hits": len(fulltext.hits),
                 "kg_entities": len(kg.entities),
                 "kg_relations": len(kg.relations),
+                "community_reports": len(kg.community_reports),
             },
         )
 
@@ -87,6 +92,7 @@ class RagflowCompatibleRetrievalService:
             "kg_entities_with_vectors": audit.kg_entities_with_vectors,
             "kg_entities_failed_vectors": audit.kg_entities_failed_vectors,
             "kg_relations": audit.kg_relations,
+            "community_reports": audit.community_reports,
             "kg_relations_with_vectors": audit.kg_relations_with_vectors,
             "kg_relations_failed_vectors": audit.kg_relations_failed_vectors,
             "short_chunks": audit.short_chunks,

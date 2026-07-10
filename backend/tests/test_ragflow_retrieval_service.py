@@ -9,6 +9,7 @@ from app.services.ragflow_compat.kg_search import RagflowKgSearch
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.retrieval_service import RagflowCompatibleRetrievalService
 from app.services.ragflow_compat.schemas import (
+    RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
     RetrievalKgEntity,
@@ -86,6 +87,20 @@ def test_ragflow_compatible_retrieval_service_returns_query_response_with_diagno
             )
         ]
     )
+    repository.replace_community_reports(
+        [
+            RetrievalCommunityReport(
+                report_id="community:失眠",
+                title="失眠、心脾两虚",
+                content_with_weight="社区报告：失眠常与心脾两虚相关。",
+                summary="失眠社区摘要",
+                evidences="失眠 -> 心脾两虚",
+                entities_kwd=["失眠", "心脾两虚"],
+                weight_flt=0.8,
+                source_id=["doc"],
+            )
+        ]
+    )
     doc_store = RagflowDocStore(repository, EmbeddingClient.demo())
     service = RagflowCompatibleRetrievalService(
         repository=repository,
@@ -105,6 +120,7 @@ def test_ragflow_compatible_retrieval_service_returns_query_response_with_diagno
     assert response.evidence
     assert response.diagnostics["retrieval_engine"] == "ragflow_compat"
     assert response.diagnostics["chunk_hits"] == 1
+    assert response.diagnostics["community_reports"] == 1
 
 
 def test_ragflow_compatible_retrieval_status_includes_readiness_report():
@@ -129,6 +145,7 @@ def test_ragflow_compatible_retrieval_status_includes_readiness_report():
     status = service.status()
 
     assert "readiness" in status
+    assert status["community_reports"] == 0
     assert status["readiness"]["ready"] is False
     assert "chunk_token_buckets" in status["readiness"]
     assert "vector_coverage" in status["readiness"]

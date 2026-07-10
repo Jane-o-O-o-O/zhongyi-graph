@@ -6,6 +6,7 @@ from app.services.ragflow_compat.doc_store import RagflowDocStore
 from app.services.ragflow_compat.kg_search import RagflowKgSearch
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
+    RetrievalCommunityReport,
     RetrievalKgEntity,
     RetrievalKgRelation,
     RetrievalTypeSamples,
@@ -64,6 +65,20 @@ def test_kg_search_combines_entity_type_relation_and_nhop_scores():
     repository.replace_type_samples(
         [RetrievalTypeSamples("Syndrome", ["心脾两虚"], 1, "2026-06-28T00:00:00Z")]
     )
+    repository.replace_community_reports(
+        [
+            RetrievalCommunityReport(
+                report_id="community:失眠",
+                title="失眠、心脾两虚",
+                content_with_weight="社区报告：失眠常与心脾两虚相关。",
+                summary="失眠与心脾两虚相关",
+                evidences="失眠 -> 心脾两虚",
+                entities_kwd=["失眠", "心脾两虚"],
+                weight_flt=0.8,
+                source_id=["doc"],
+            )
+        ]
+    )
 
     result = RagflowKgSearch(RagflowDocStore(repository, EmbeddingClient.demo())).retrieve(
         "失眠从哪些证候分析？",
@@ -73,6 +88,7 @@ def test_kg_search_combines_entity_type_relation_and_nhop_scores():
 
     assert result.entities[0].entity in {"失眠", "心脾两虚"}
     assert any(relation.to_entity == "心脾两虚" for relation in result.relations)
+    assert result.community_reports[0].title == "失眠、心脾两虚"
     assert result.graph_edges[0].source == "symptom:失眠"
     assert result.graph_edges[0].target == "syndrome:心脾两虚"
 

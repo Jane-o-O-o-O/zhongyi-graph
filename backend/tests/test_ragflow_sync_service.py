@@ -86,7 +86,13 @@ def test_sync_service_rebuilds_documents_chunks_entities_relations_from_existing
         retrieval_repository=retrieval_repository,
     ).rebuild_from_ingestion()
 
-    assert summary == {"documents": 1, "chunks": 1, "kg_entities": 2, "kg_relations": 1}
+    assert summary == {
+        "documents": 1,
+        "chunks": 1,
+        "kg_entities": 2,
+        "kg_relations": 1,
+        "community_reports": 0,
+    }
     document = retrieval_repository.list_documents()[0]
     assert document.doc_id == source.source_id
     assert document.eligible_chunk_count == 1
@@ -180,12 +186,16 @@ def test_sync_service_rebuilds_kg_index_from_graph_service_when_available():
 
     assert summary["kg_entities"] == 2
     assert summary["kg_relations"] == 1
+    assert summary["community_reports"] == 1
     entities = retrieval_repository.list_kg_entities()
     relations = retrieval_repository.list_kg_relations()
     assert {entity.entity_name for entity in entities} == {"失眠", "心脾两虚"}
     assert relations[0].from_entity_kwd == "失眠"
     assert relations[0].to_entity_kwd == "心脾两虚"
     assert relations[0].evidence_chunk_ids == ["chunk:1"]
+    community_report = retrieval_repository.list_community_reports()[0]
+    assert community_report.entities_kwd == ["失眠", "心脾两虚"]
+    assert "失眠" in community_report.content_with_weight
     entity_by_name = {entity.entity_name: entity for entity in entities}
     assert entity_by_name["失眠"].rank_flt > 0
     assert entity_by_name["失眠"].n_hop_with_weight == [
