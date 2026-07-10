@@ -564,12 +564,19 @@ def test_build_merges_duplicate_subgraph_node_provenance_like_ragflow_graph_merg
 def test_build_merges_duplicate_subgraph_edges_by_relation_endpoints_like_ragflow_graph_merge():
     ingestion_repository, retrieval_repository = _repositories()
     nodes = [
-        GraphNode(id="entity:symptom:失眠", label="Symptom", name="失眠", description="失眠"),
+        GraphNode(
+            id="entity:symptom:失眠",
+            label="Symptom",
+            name="失眠",
+            description="失眠",
+            properties={"source_id": ["doc:a", "doc:b"], "source_chunk_ids": ["chunk:doc:a:1", "chunk:doc:b:1"]},
+        ),
         GraphNode(
             id="entity:syndrome:心脾两虚",
             label="Syndrome",
             name="心脾两虚",
             description="心脾两虚",
+            properties={"source_id": ["doc:a", "doc:b"], "source_chunk_ids": ["chunk:doc:a:1", "chunk:doc:b:1"]},
         ),
     ]
     for source_id, edge_id, evidence_id in [
@@ -616,6 +623,105 @@ def test_build_merges_duplicate_subgraph_edges_by_relation_endpoints_like_ragflo
     payload = json.loads(global_artifact.content_with_weight)
     assert len(payload["edges"]) == 1
     assert payload["edges"][0]["evidence_ids"] == ["chunk:doc:a:1", "chunk:doc:b:1"]
+
+
+def test_build_tidy_graph_removes_nodes_and_edges_missing_essential_attributes():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    retrieval_repository.save_graph_artifact(
+        RetrievalGraphArtifact(
+            artifact_id="subgraph:doc:a",
+            artifact_type="subgraph",
+            content_with_weight=json.dumps(
+                {
+                    "nodes": [
+                        GraphNode(
+                            id="entity:symptom:失眠",
+                            label="Symptom",
+                            name="失眠",
+                            description="失眠描述",
+                            properties={
+                                "source_id": "doc:a",
+                                "source_chunk_ids": ["chunk:doc:a:1"],
+                            },
+                        ).model_dump(),
+                        GraphNode(
+                            id="entity:treatment:养血安神",
+                            label="Treatment",
+                            name="养血安神",
+                            description="养血安神描述",
+                            properties={
+                                "source_id": "doc:a",
+                                "source_chunk_ids": ["chunk:doc:a:1"],
+                            },
+                        ).model_dump(),
+                        GraphNode(
+                            id="entity:syndrome:心脾两虚",
+                            label="Syndrome",
+                            name="心脾两虚",
+                            description="",
+                            properties={
+                                "source_id": "doc:a",
+                                "source_chunk_ids": ["chunk:doc:a:1"],
+                            },
+                        ).model_dump(),
+                        GraphNode(
+                            id="entity:formula:归脾汤",
+                            label="Formula",
+                            name="归脾汤",
+                            description="归脾汤描述",
+                            properties={},
+                        ).model_dump(),
+                    ],
+                    "edges": [
+                        GraphEdge(
+                            id="edge:valid",
+                            source="entity:symptom:失眠",
+                            target="entity:treatment:养血安神",
+                            relation="RECOMMENDS_TREATMENT",
+                            display="治法",
+                            evidence_ids=["chunk:doc:a:1"],
+                        ).model_dump(),
+                        GraphEdge(
+                            id="edge:missing:evidence",
+                            source="entity:symptom:失眠",
+                            target="entity:treatment:养血安神",
+                            relation="RELATED_TO",
+                            display="相关",
+                            evidence_ids=[],
+                        ).model_dump(),
+                        GraphEdge(
+                            id="edge:dirty:target",
+                            source="entity:symptom:失眠",
+                            target="entity:formula:归脾汤",
+                            relation="RECOMMENDS_FORMULA",
+                            display="推荐方剂",
+                            evidence_ids=["chunk:doc:a:1"],
+                        ).model_dump(),
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            source_id=["doc:a"],
+            node_count=4,
+            edge_count=3,
+        )
+    )
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=RecordingExtractor(),
+    ).build(["doc:a"], with_resolution=False, with_community=False)
+
+    global_artifact = retrieval_repository.get_graph_artifact("graph:global")
+    assert global_artifact is not None
+    assert summary.global_nodes == 2
+    assert summary.global_edges == 1
+    payload = json.loads(global_artifact.content_with_weight)
+    assert {node["name"] for node in payload["nodes"]} == {"失眠", "养血安神"}
+    assert [edge["id"] for edge in payload["edges"]] == ["edge:valid"]
 
 
 def test_build_clears_phase_markers_when_new_subgraph_changes_graph():

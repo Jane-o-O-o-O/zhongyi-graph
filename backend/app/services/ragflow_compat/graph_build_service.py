@@ -679,9 +679,11 @@ def _merge_subgraph_artifacts(artifacts) -> tuple[list[GraphNode], list[GraphEdg
             if existing:
                 edge = _merge_edge(existing, edge)
             edges_by_key[edge_key] = edge
+    nodes = _tidy_graph_nodes(nodes_by_id)
+    edges = _tidy_graph_edges(edges_by_key, set(nodes))
     return (
-        [nodes_by_id[node_id] for node_id in sorted(nodes_by_id)],
-        sorted(edges_by_key.values(), key=lambda edge: edge.id),
+        [nodes[node_id] for node_id in sorted(nodes)],
+        sorted(edges, key=lambda edge: edge.id),
         sorted(merged_sources),
     )
 
@@ -760,6 +762,36 @@ def _merge_edge(left: GraphEdge, right: GraphEdge) -> GraphEdge:
 def _edge_merge_key(edge: GraphEdge) -> tuple[str, str, str]:
     source, target = sorted([edge.source, edge.target])
     return source, target, edge.relation
+
+
+def _tidy_graph_nodes(nodes_by_id: dict[str, GraphNode]) -> dict[str, GraphNode]:
+    return {
+        node_id: node
+        for node_id, node in nodes_by_id.items()
+        if node.description.strip() and _has_node_provenance(node)
+    }
+
+
+def _has_node_provenance(node: GraphNode) -> bool:
+    return bool(
+        _merge_string_values(node.properties.get("source_id"), None)
+        or _merge_string_values(node.properties.get("source_chunk_ids"), None)
+    )
+
+
+def _tidy_graph_edges(
+    edges_by_key: dict[tuple[str, str, str], GraphEdge],
+    node_ids: set[str],
+) -> list[GraphEdge]:
+    return [
+        edge
+        for edge in edges_by_key.values()
+        if edge.source in node_ids
+        and edge.target in node_ids
+        and edge.relation.strip()
+        and edge.display.strip()
+        and edge.evidence_ids
+    ]
 
 
 def _global_graph_artifact(
