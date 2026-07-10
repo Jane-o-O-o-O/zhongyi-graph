@@ -7,6 +7,7 @@ from app.services.ragflow_compat.entity_resolution import (
     LlmEntityResolutionDecider,
     RagflowGraphEntityResolutionService,
 )
+from app.services.ragflow_compat.checkpoints import RESOLUTION_CHECKPOINT
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 
 
@@ -141,3 +142,4 @@ def test_ragflow_entity_resolution_resolves_candidates_in_ragflow_sized_batches(
 
     assert [entity_type for entity_type, _pairs in decider.calls] == ["Syndrome", "Syndrome"]
     assert [len(pairs) for _entity_type, pairs in decider.calls] == [100, 20]
+    assert repository.load_graphrag_checkpoints(RESOLUTION_CHECKPOINT) == {}

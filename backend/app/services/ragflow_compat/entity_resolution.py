@@ -103,8 +103,7 @@ class RagflowGraphEntityResolutionService:
                 selected_pairs.extend(resolved_pairs)
                 pairs_resolved += len(resolved_pairs)
         resolved_nodes, resolved_edges, pairs_merged = _merge_pairs(nodes, edges, selected_pairs)
-        if selected_pairs:
-            repository.cleanup_graphrag_checkpoints(RESOLUTION_CHECKPOINT)
+        repository.cleanup_graphrag_checkpoints(RESOLUTION_CHECKPOINT)
         return RagflowGraphEntityResolutionResult(
             nodes=resolved_nodes,
             edges=resolved_edges,
