@@ -26,6 +26,8 @@ class RagflowGraphBuildSummary:
     graph_changed: bool = False
     resolution_marker_cleared: bool = False
     community_marker_cleared: bool = False
+    resolution_marker_set: bool = False
+    community_marker_set: bool = False
 
 
 class RagflowGraphBuildService:
@@ -42,7 +44,13 @@ class RagflowGraphBuildService:
         self.graph_extractor = graph_extractor
         self.chunk_batch_size = chunk_batch_size
 
-    def build(self, source_ids: list[str] | None = None) -> RagflowGraphBuildSummary:
+    def build(
+        self,
+        source_ids: list[str] | None = None,
+        *,
+        with_resolution: bool = True,
+        with_community: bool = True,
+    ) -> RagflowGraphBuildSummary:
         selected_source_ids = self._source_ids(source_ids)
         skipped = 0
         built = 0
@@ -83,13 +91,25 @@ class RagflowGraphBuildService:
             )
             resolution_marker_cleared = True
             community_marker_cleared = True
+        resolution_marker_set = False
+        community_marker_set = False
         if merged_nodes or merged_edges:
             RagflowRetrievalSyncService(
                 ingestion_repository=self.ingestion_repository,
                 retrieval_repository=self.retrieval_repository,
                 graph_service=GraphService(merged_nodes, merged_edges),
                 write_graph_artifacts=False,
+                mark_resolution_phase=False,
+                mark_community_phase=False,
             ).rebuild_from_ingestion()
+            if with_resolution:
+                resolution_marker_set = self.retrieval_repository.set_graphrag_phase_marker(
+                    PHASE_RESOLUTION
+                )
+            if with_community:
+                community_marker_set = self.retrieval_repository.set_graphrag_phase_marker(
+                    PHASE_COMMUNITY
+                )
         return RagflowGraphBuildSummary(
             sources_total=len(selected_source_ids),
             sources_skipped=skipped,
@@ -101,6 +121,8 @@ class RagflowGraphBuildService:
             graph_changed=built > 0,
             resolution_marker_cleared=resolution_marker_cleared,
             community_marker_cleared=community_marker_cleared,
+            resolution_marker_set=resolution_marker_set,
+            community_marker_set=community_marker_set,
         )
 
     def _source_ids(self, source_ids: list[str] | None) -> list[str]:

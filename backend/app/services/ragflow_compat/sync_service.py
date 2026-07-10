@@ -43,6 +43,8 @@ class RagflowRetrievalSyncService:
         build_chunk_terms: bool = False,
         graph_service: GraphService | None = None,
         write_graph_artifacts: bool = True,
+        mark_resolution_phase: bool = True,
+        mark_community_phase: bool = True,
     ):
         self.ingestion_repository = ingestion_repository
         self.retrieval_repository = retrieval_repository
@@ -52,6 +54,8 @@ class RagflowRetrievalSyncService:
         self.build_chunk_terms = build_chunk_terms
         self.graph_service = graph_service
         self.write_graph_artifacts = write_graph_artifacts
+        self.mark_resolution_phase = mark_resolution_phase
+        self.mark_community_phase = mark_community_phase
 
     def rebuild_from_ingestion(self) -> dict[str, int]:
         sources = self.ingestion_repository.list_sources()
@@ -127,8 +131,9 @@ class RagflowRetrievalSyncService:
         self.retrieval_repository.append_community_reports(community_reports)
         self.retrieval_repository.append_graph_artifacts(graph_artifacts)
         self.retrieval_repository.append_type_samples(retrieval_type_samples)
-        if graph_branch:
+        if graph_branch and self.mark_resolution_phase:
             self.retrieval_repository.set_graphrag_phase_marker(PHASE_RESOLUTION)
+        if graph_branch and self.mark_community_phase:
             self.retrieval_repository.set_graphrag_phase_marker(PHASE_COMMUNITY)
         return {
             "documents": len(retrieval_documents),

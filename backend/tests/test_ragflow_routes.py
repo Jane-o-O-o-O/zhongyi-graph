@@ -6,6 +6,7 @@ from app.api import routes
 from app.main import app
 from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate, SourceManifest
 from app.services.ingestion_repository import IngestionRepository
+from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 
 
@@ -106,7 +107,7 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
 
     response = TestClient(app).post(
         "/api/retrieval/graphrag/build",
-        json={"source_ids": ["doc:a"]},
+        json={"source_ids": ["doc:a"], "with_resolution": False, "with_community": False},
     )
 
     assert response.status_code == 200
@@ -116,7 +117,11 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     assert body["sources_built"] == 1
     assert body["sources_failed"] == 0
     assert body["global_nodes"] == 2
+    assert body["resolution_marker_set"] is False
+    assert body["community_marker_set"] is False
     assert body["graph_refreshed"] is True
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_RESOLUTION) is False
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_COMMUNITY) is False
 
     overview = TestClient(app).get("/api/graph/overview", params={"limit": 10})
     assert overview.status_code == 200

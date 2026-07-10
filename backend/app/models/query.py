@@ -37,6 +37,8 @@ class GraphOverviewResponse(BaseModel):
 
 class GraphBuildRequest(BaseModel):
     source_ids: list[str] | None = None
+    with_resolution: bool = True
+    with_community: bool = True
 
     @field_validator("source_ids", mode="before")
     @classmethod
@@ -68,4 +70,6 @@ class GraphBuildResponse(BaseModel):
     graph_changed: bool
     resolution_marker_cleared: bool
     community_marker_cleared: bool
+    resolution_marker_set: bool
+    community_marker_set: bool
     graph_refreshed: bool

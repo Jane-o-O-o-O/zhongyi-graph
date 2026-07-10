@@ -235,7 +235,11 @@ def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBui
         ingestion_repository=ingestion_repository,
         retrieval_repository=ragflow_repository,
         graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
-    ).build(request.source_ids)
+    ).build(
+        request.source_ids,
+        with_resolution=request.with_resolution,
+        with_community=request.with_community,
+    )
     graph_refreshed = _refresh_question_graph_from_ragflow_global_artifact()
     return GraphBuildResponse(
         status="ok",

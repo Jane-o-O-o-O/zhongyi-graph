@@ -208,6 +208,40 @@ def test_build_clears_phase_markers_when_new_subgraph_changes_graph():
     assert summary.community_marker_cleared is True
 
 
+def test_build_sets_phase_markers_after_postprocessing_global_graph():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=FixedExtractor(),
+    ).build(["doc:a"])
+
+    assert summary.resolution_marker_set is True
+    assert summary.community_marker_set is True
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_RESOLUTION) is True
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_COMMUNITY) is True
+
+
+def test_build_can_skip_postprocessing_phase_markers():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=FixedExtractor(),
+    ).build(["doc:a"], with_resolution=False, with_community=False)
+
+    assert summary.resolution_marker_set is False
+    assert summary.community_marker_set is False
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_RESOLUTION) is False
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_COMMUNITY) is False
+
+
 def test_build_keeps_phase_markers_on_pure_resume():
     ingestion_repository, retrieval_repository = _repositories()
     ingestion_repository.upsert_source(_source("doc:a"))
