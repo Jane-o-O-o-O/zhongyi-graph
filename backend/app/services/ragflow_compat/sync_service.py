@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from app.models.graph import GraphNode
 from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate, SourceManifest
+from app.services.graph_analytics_service import GraphAnalyticsService
 from app.services.graph_service import GraphService
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.query import build_content_with_weight, tokenize_query
@@ -225,37 +226,17 @@ class RagflowRetrievalSyncService:
         graph_service: GraphService,
         evidence_lookup: "CandidateEvidenceLookup",
     ) -> list[RetrievalKgEntity]:
-        adjacency: dict[str, list[dict]] = defaultdict(list)
-        names_by_id = {node.id: node.name for node in graph_service.nodes}
-        for edge in graph_service.edges:
-            source = names_by_id.get(edge.source, edge.source)
-            target = names_by_id.get(edge.target, edge.target)
-            adjacency[edge.source].append(
-                {"path": [source, target], "weights": [1.0]}
-            )
-            adjacency[edge.target].append(
-                {"path": [target, source], "weights": [1.0]}
-            )
+        n_hop_paths = _n_hop_paths_from_graph(graph_service)
         return [
             RetrievalKgEntity(
                 entity_id=node.id,
                 entity_name=node.name,
                 entity_type=node.label,
                 source_node_id=node.id,
-                content_with_weight=json.dumps(
-                    {
-                        "description": " ".join(
-                            part for part in [node.name, node.label, node.description] if part
-                        ),
-                        "source": "neo4j",
-                    },
-                    ensure_ascii=False,
-                ),
+                content_with_weight=json.dumps(_graph_entity_content(node), ensure_ascii=False),
                 description=node.description or f"{node.name} {node.label}",
-                rank_flt=float(node.properties.get("rank", 1.0))
-                if isinstance(node.properties.get("rank", 1.0), int | float)
-                else 1.0,
-                n_hop_with_weight=adjacency.get(node.id, [])[:20],
+                rank_flt=_float_property(node.properties, "pagerank", "rank", fallback=1.0),
+                n_hop_with_weight=n_hop_paths.get(node.id, [])[:40],
                 aliases=_string_list(node.properties.get("aliases", [])),
                 evidence_chunk_ids=_unique(
                     _source_chunks_from_graph_node(node)
@@ -296,7 +277,10 @@ class RagflowRetrievalSyncService:
                     relation_type=edge.relation,
                     display=edge.display,
                     content_with_weight=f"{from_name} {edge.display} {to_name}",
-                    weight_int=1,
+                    weight_int=max(
+                        1,
+                        round(GraphAnalyticsService.retrieval_edge_weight(edge) * 10),
+                    ),
                     evidence_chunk_ids=_unique(
                         _chunk_ids_from_evidence_ids(edge.evidence_ids)
                         + candidate_evidence
@@ -394,6 +378,85 @@ def _chunk_ids_from_evidence_ids(evidence_ids: list[str]) -> list[str]:
         elif evidence_id.startswith("evidence:"):
             chunk_ids.append(evidence_id.replace("evidence:", "chunk:", 1))
     return chunk_ids
+
+
+def _n_hop_paths_from_graph(
+    graph_service: GraphService,
+    *,
+    max_hops: int = 2,
+    max_paths_per_node: int = 40,
+) -> dict[str, list[dict]]:
+    nodes_by_id = {node.id: node for node in graph_service.nodes}
+    names_by_id = {node.id: node.name for node in graph_service.nodes}
+    adjacency: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for edge in graph_service.edges:
+        if edge.source not in nodes_by_id or edge.target not in nodes_by_id:
+            continue
+        weight = GraphAnalyticsService.retrieval_edge_weight(edge)
+        adjacency[edge.source].append((edge.target, weight))
+        adjacency[edge.target].append((edge.source, weight))
+    for node_id, neighbors in adjacency.items():
+        neighbors.sort(key=lambda item: (-item[1], names_by_id.get(item[0], item[0]), item[0]))
+
+    result: dict[str, list[dict]] = {}
+    for node_id in nodes_by_id:
+        paths: list[dict] = []
+
+        def walk(current_id: str, path: list[str], weights: list[float]) -> None:
+            if len(weights) >= max_hops:
+                return
+            for next_id, weight in adjacency.get(current_id, []):
+                if next_id in path:
+                    continue
+                next_path = [*path, next_id]
+                next_weights = [*weights, weight]
+                paths.append(
+                    {
+                        "path": [names_by_id.get(path_id, path_id) for path_id in next_path],
+                        "weights": [round(value, 6) for value in next_weights],
+                    }
+                )
+                walk(next_id, next_path, next_weights)
+
+        walk(node_id, [node_id], [])
+        paths.sort(
+            key=lambda item: (
+                -sum(float(value) for value in item["weights"]),
+                len(item["path"]),
+                item["path"],
+            )
+        )
+        result[node_id] = paths[:max_paths_per_node]
+    return result
+
+
+def _graph_entity_content(node: GraphNode) -> dict:
+    description_parts = [node.name, node.label, node.description]
+    aliases = _string_list(node.properties.get("aliases", []))
+    if aliases:
+        description_parts.append("别名：" + "、".join(aliases))
+    community_summary = str(node.properties.get("community_summary") or "")
+    if community_summary:
+        description_parts.append(community_summary)
+    return {
+        "description": " ".join(part for part in description_parts if part),
+        "source": "neo4j",
+        "canonical_id": str(node.properties.get("canonical_id") or node.id),
+        "canonical_name": str(node.properties.get("canonical_name") or node.name),
+        "canonical_label": str(node.properties.get("canonical_label") or node.label),
+        "aliases": aliases,
+        "community_id": node.properties.get("community_id", 0),
+        "community_title": str(node.properties.get("community_title") or ""),
+        "community_summary": community_summary,
+    }
+
+
+def _float_property(properties: dict, *keys: str, fallback: float) -> float:
+    for key in keys:
+        value = properties.get(key)
+        if isinstance(value, int | float):
+            return float(value)
+    return fallback
 
 
 def _string_list(value) -> list[str]:

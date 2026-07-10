@@ -186,6 +186,11 @@ def test_sync_service_rebuilds_kg_index_from_graph_service_when_available():
     assert relations[0].from_entity_kwd == "失眠"
     assert relations[0].to_entity_kwd == "心脾两虚"
     assert relations[0].evidence_chunk_ids == ["chunk:1"]
+    entity_by_name = {entity.entity_name: entity for entity in entities}
+    assert entity_by_name["失眠"].rank_flt > 0
+    assert entity_by_name["失眠"].n_hop_with_weight == [
+        {"path": ["失眠", "心脾两虚"], "weights": [1.0]}
+    ]
 
 
 def test_sync_service_keeps_list_source_chunks_from_graph_nodes():
@@ -298,3 +303,92 @@ def test_sync_service_backfills_graph_kg_evidence_from_ingestion_candidates():
         "心脾两虚": [chunk.chunk_id],
     }
     assert relation.evidence_chunk_ids == [chunk.chunk_id]
+
+
+def test_sync_service_uses_graph_analytics_for_rank_and_two_hop_neighbors():
+    ingestion_repository, retrieval_repository = _shared_repositories()
+    graph_service = GraphService(
+        nodes=[
+            GraphNode(id="formula:归脾汤", label="Formula", name="归脾汤"),
+            GraphNode(id="prescription:归脾汤_1", label="Prescription", name="归脾汤_1"),
+            GraphNode(id="herb:人参", label="Herb", name="人参"),
+        ],
+        edges=[
+            GraphEdge(
+                id="edge:formula:prescription",
+                source="formula:归脾汤",
+                target="prescription:归脾汤_1",
+                relation="HAS_PRESCRIPTION",
+                display="处方",
+            ),
+            GraphEdge(
+                id="edge:prescription:herb",
+                source="prescription:归脾汤_1",
+                target="herb:人参",
+                relation="COMPOSED_OF",
+                display="组成",
+            ),
+        ],
+    )
+
+    RagflowRetrievalSyncService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_service=graph_service,
+    ).rebuild_from_ingestion()
+
+    entity_by_name = {
+        entity.entity_name: entity
+        for entity in retrieval_repository.list_kg_entities()
+    }
+    formula = entity_by_name["归脾汤"]
+    relation_by_type = {
+        relation.relation_type: relation
+        for relation in retrieval_repository.list_kg_relations()
+    }
+    assert formula.rank_flt == graph_service.nodes[0].properties["pagerank"]
+    assert {
+        tuple(path["path"])
+        for path in formula.n_hop_with_weight
+    } == {
+        ("归脾汤", "归脾汤_1"),
+        ("归脾汤", "归脾汤_1", "人参"),
+    }
+    assert relation_by_type["HAS_PRESCRIPTION"].weight_int > 1
+
+
+def test_sync_service_includes_resolution_and_community_metadata_in_kg_entities():
+    ingestion_repository, retrieval_repository = _shared_repositories()
+    graph_service = GraphService(
+        nodes=[
+            GraphNode(id="herb:白芍", label="Herb", name="白芍"),
+            GraphNode(id="alias:白芍药", label="Alias", name="白芍药"),
+        ],
+        edges=[
+            GraphEdge(
+                id="edge:alias",
+                source="herb:白芍",
+                target="alias:白芍药",
+                relation="HAS_ALIAS",
+                display="别名",
+            )
+        ],
+    )
+
+    RagflowRetrievalSyncService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_service=graph_service,
+    ).rebuild_from_ingestion()
+
+    entity_by_name = {
+        entity.entity_name: entity
+        for entity in retrieval_repository.list_kg_entities()
+    }
+    herb = entity_by_name["白芍"]
+    alias = entity_by_name["白芍药"]
+    assert herb.aliases == ["白芍药"]
+    assert herb.metadata["canonical_id"] == "herb:白芍"
+    assert "community_summary" in herb.metadata
+    assert '"aliases": ["白芍药"]' in herb.content_with_weight
+    assert alias.metadata["canonical_id"] == "herb:白芍"

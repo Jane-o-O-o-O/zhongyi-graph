@@ -1,11 +1,20 @@
 from app.data.sample_graph import SAMPLE_EDGES, SAMPLE_NODES
 from app.models.graph import GraphEdge, GraphNode
+from app.services.graph_analytics_service import GraphAnalyticsService
+from app.services.graph_community_summary_service import GraphCommunitySummaryService
+from app.services.graph_entity_resolution_service import GraphEntityResolutionService
 
 
 class GraphService:
     def __init__(self, nodes: list[GraphNode], edges: list[GraphEdge]):
         self.nodes = nodes
         self.edges = edges
+        self.analytics = GraphAnalyticsService().analyze(nodes, edges)
+        self.analytics.apply_to_nodes(self.nodes)
+        self.entity_resolution = GraphEntityResolutionService().resolve(nodes, edges)
+        self.entity_resolution.apply_to_nodes(self.nodes)
+        self.community_summaries = GraphCommunitySummaryService().summarize(self.nodes)
+        self.community_summaries.apply_to_nodes(self.nodes)
 
     @classmethod
     def demo(cls) -> "GraphService":
@@ -42,23 +51,22 @@ class GraphService:
         max_nodes: int = 3000,
         max_edges: int = 9000,
     ) -> tuple[list[GraphNode], list[GraphEdge]]:
-        degree_by_id = {node.id: 0 for node in self.nodes}
-        for edge in self.edges:
-            if edge.source in degree_by_id:
-                degree_by_id[edge.source] += 1
-            if edge.target in degree_by_id:
-                degree_by_id[edge.target] += 1
-
-        selected_nodes = sorted(
-            self.nodes,
-            key=lambda node: (-degree_by_id.get(node.id, 0), node.label, node.name, node.id),
-        )[:max_nodes]
+        selected_nodes = _balanced_overview_nodes(self.nodes, max_nodes=max_nodes)
         visible_ids = {node.id for node in selected_nodes}
+        nodes_by_id = {node.id: node for node in self.nodes}
         selected_edges = [
             edge
             for edge in self.edges
             if edge.source in visible_ids and edge.target in visible_ids
-        ][:max_edges]
+        ]
+        selected_edges = sorted(
+            selected_edges,
+            key=lambda edge: (
+                -GraphAnalyticsService.edge_weight(edge, nodes_by_id),
+                edge.relation,
+                edge.id,
+            ),
+        )[:max_edges]
         return selected_nodes, selected_edges
 
     def neighborhood(
@@ -112,3 +120,58 @@ class GraphService:
             if edge.id in selected_edge_ids and edge.source in visible_ids and edge.target in visible_ids
         ][:max_edges]
         return selected_nodes, selected_edges
+
+
+def _balanced_overview_nodes(nodes: list[GraphNode], *, max_nodes: int) -> list[GraphNode]:
+    if max_nodes <= 0:
+        return []
+    groups: dict[int, list[GraphNode]] = {}
+    for node in nodes:
+        community_id = int(node.properties.get("community_id", 0))
+        groups.setdefault(community_id, []).append(node)
+    for group_nodes in groups.values():
+        group_nodes.sort(key=_overview_node_sort_key)
+
+    community_order = sorted(
+        groups,
+        key=lambda community_id: (
+            -sum(
+                float(node.properties.get("visual_weight", 0.0))
+                for node in groups[community_id][: min(8, len(groups[community_id]))]
+            ),
+            community_id,
+        ),
+    )
+    active_communities = community_order[:max_nodes]
+    positions = {community_id: 0 for community_id in active_communities}
+    selected: list[GraphNode] = []
+    selected_ids: set[str] = set()
+    while len(selected) < max_nodes:
+        changed = False
+        for community_id in active_communities:
+            position = positions[community_id]
+            group_nodes = groups[community_id]
+            if position >= len(group_nodes):
+                continue
+            node = group_nodes[position]
+            positions[community_id] += 1
+            if node.id in selected_ids:
+                continue
+            selected.append(node)
+            selected_ids.add(node.id)
+            changed = True
+            if len(selected) >= max_nodes:
+                break
+        if not changed:
+            break
+    return selected
+
+
+def _overview_node_sort_key(node: GraphNode):
+    return (
+        -float(node.properties.get("visual_weight", 0.0)),
+        -int(node.properties.get("degree", 0)),
+        node.label,
+        node.name,
+        node.id,
+    )
