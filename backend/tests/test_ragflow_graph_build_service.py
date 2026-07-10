@@ -864,6 +864,15 @@ def test_build_replays_community_report_checkpoint_into_retrieval_reports():
     assert reports[0].title == "白芍养血社区"
     assert reports[0].summary == "白芍与养血敛阴构成一个功效主题社区。"
     assert reports[0].entities_kwd == ["白芍", "养血敛阴"]
+    content = json.loads(reports[0].content_with_weight)
+    assert content["findings"] == [
+        {"summary": "功效关联", "explanation": "白芍连接养血敛阴。"}
+    ]
+    assert content["rating"] == 1.0
+    assert content["rating_explanation"] == "测试报告"
+    assert reports[0].metadata["findings"] == content["findings"]
+    assert reports[0].metadata["rating"] == 1.0
+    assert reports[0].metadata["rating_explanation"] == "测试报告"
 
 
 def test_build_replays_resolution_checkpoint_and_merges_entities():

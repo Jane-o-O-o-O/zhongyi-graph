@@ -129,6 +129,13 @@ def _summary_from_report(
         report = {}
     title = str(report.get("title") or base_summary.title)
     summary = str(report.get("summary") or base_summary.summary)
+    findings = report.get("findings", [])
+    if not isinstance(findings, list):
+        findings = []
+    try:
+        rating = float(report.get("rating", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        rating = 0.0
     return CommunitySummary(
         community_id=community_id,
         title=title,
@@ -137,4 +144,7 @@ def _summary_from_report(
         weight=base_summary.weight,
         entities=entity_names or base_summary.entities,
         label_counts=base_summary.label_counts,
+        findings=[finding for finding in findings if isinstance(finding, (dict, str))],
+        rating=rating,
+        rating_explanation=str(report.get("rating_explanation") or ""),
     )

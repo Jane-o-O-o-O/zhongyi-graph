@@ -327,6 +327,9 @@ class RagflowRetrievalSyncService:
                 "report": summary.summary,
                 "evidences": "；".join(summary.entities),
                 "title": summary.title,
+                "findings": summary.findings or [],
+                "rating": summary.rating,
+                "rating_explanation": summary.rating_explanation,
             }
             reports.append(
                 RetrievalCommunityReport(
@@ -342,6 +345,9 @@ class RagflowRetrievalSyncService:
                         "community_id": community_id,
                         "community_size": summary.size,
                         "label_counts": summary.label_counts,
+                        "findings": summary.findings or [],
+                        "rating": summary.rating,
+                        "rating_explanation": summary.rating_explanation,
                     },
                 )
             )

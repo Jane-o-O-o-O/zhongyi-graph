@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 
 from app.models.graph import GraphNode
 from app.services.graph_analytics_service import LOW_VALUE_LABELS
@@ -16,6 +17,9 @@ class CommunitySummary:
     weight: float
     entities: list[str]
     label_counts: list[str]
+    findings: list[dict[str, Any] | str] | None = None
+    rating: float = 0.0
+    rating_explanation: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,8 @@ class GraphCommunitySummaryResult:
                     "community_weight": summary.weight,
                     "community_entities": summary.entities,
                     "community_label_counts": summary.label_counts,
+                    "community_rating": summary.rating,
+                    "community_rating_explanation": summary.rating_explanation,
                 }
             )
 
