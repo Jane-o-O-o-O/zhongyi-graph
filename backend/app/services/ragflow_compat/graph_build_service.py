@@ -75,6 +75,7 @@ class RagflowGraphBuildService:
         retry_backoff_seconds: float = 2.0,
         retry_backoff_max_seconds: float = 60.0,
         source_timeout_seconds: float = 600.0,
+        method: str = "light",
         sleep_fn=time.sleep,
         monotonic_fn=time.monotonic,
     ):
@@ -95,6 +96,7 @@ class RagflowGraphBuildService:
             retry_backoff_max_seconds,
         )
         self.source_timeout_seconds = max(0.0, source_timeout_seconds)
+        self.method = _normalize_method(method)
         self.sleep_fn = sleep_fn
         self.monotonic_fn = monotonic_fn
 
@@ -250,6 +252,7 @@ class RagflowGraphBuildService:
             "retry_backoff_seconds": self.retry_backoff_seconds,
             "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
             "source_timeout_seconds": self.source_timeout_seconds,
+            "method": self.method,
             "execution_mode": execution_mode,
         }
 
@@ -546,6 +549,7 @@ class RagflowGraphBuildService:
             "retry_backoff_seconds": self.retry_backoff_seconds,
             "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
             "source_timeout_seconds": self.source_timeout_seconds,
+            "method": self.method,
             "execution_mode": current_metadata.get("execution_mode", "sync"),
             "current_source_id": current_source_id,
             "source_events": list(source_events),
@@ -617,6 +621,11 @@ def _source_event(
         "processed": processed,
         "failed": failed,
     }
+
+
+def _normalize_method(method: str) -> str:
+    normalized = str(method or "light").strip().lower()
+    return normalized if normalized in {"light", "general", "ner"} else "light"
 
 
 def _subgraph_artifact(

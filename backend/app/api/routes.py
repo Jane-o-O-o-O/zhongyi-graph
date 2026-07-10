@@ -281,7 +281,7 @@ def _graphrag_build_service(request: GraphBuildRequest) -> RagflowGraphBuildServ
     return RagflowGraphBuildService(
         ingestion_repository=ingestion_repository,
         retrieval_repository=ragflow_repository,
-        graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
+        graph_extractor=_graph_extractor_for_method(request.method),
         entity_resolution_service=RagflowGraphEntityResolutionService(
             decider=LlmEntityResolutionDecider(structured_extractor)
         ),
@@ -292,7 +292,15 @@ def _graphrag_build_service(request: GraphBuildRequest) -> RagflowGraphBuildServ
         retry_backoff_seconds=request.retry_backoff_seconds,
         retry_backoff_max_seconds=request.retry_backoff_max_seconds,
         source_timeout_seconds=request.source_timeout_seconds,
+        method=request.method,
     )
+
+
+def _graph_extractor_for_method(method: str):
+    try:
+        return GraphExtractor(llm_extractor=structured_extractor, method=method)
+    except TypeError:
+        return GraphExtractor(llm_extractor=structured_extractor)
 
 
 def _run_ragflow_graphrag_background(service, submission) -> None:

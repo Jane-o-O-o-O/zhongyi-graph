@@ -38,6 +38,33 @@ def test_graph_extractor_extracts_tcm_candidates_from_llm_output():
     assert all(relation.evidence_chunk_ids == [chunk.chunk_id] for relation in relations)
 
 
+def test_graph_extractor_ner_method_extracts_entities_without_llm():
+    chunk = DocumentChunk(
+        chunk_id="chunk:source:uploaded:ner:0001",
+        source_id="source:uploaded:ner",
+        page_id="page:source:uploaded:ner:1",
+        chunk_index=1,
+        content="白芍具有养血敛阴功效，常用于失眠。",
+    )
+
+    entities, relations = GraphExtractor(method="ner").extract([chunk])
+
+    assert {
+        (entity.name, entity.label)
+        for entity in entities
+    } >= {
+        ("白芍", "Herb"),
+        ("养血敛阴", "Function"),
+        ("失眠", "Symptom"),
+    }
+    assert any(
+        relation.source_entity_id == "entity:herb:白芍"
+        and relation.target_entity_id == "entity:function:养血敛阴"
+        and relation.relation == "RELATED_TO"
+        for relation in relations
+    )
+
+
 def test_graph_extractor_links_insomnia_synonym_to_clinical_path():
     chunk = DocumentChunk(
         chunk_id="chunk:source:uploaded:abc:0001",

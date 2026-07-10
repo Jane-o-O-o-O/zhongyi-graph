@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.graph import EvidenceCard, GraphEdge, GraphNode
@@ -37,6 +39,7 @@ class GraphOverviewResponse(BaseModel):
 
 class GraphBuildRequest(BaseModel):
     source_ids: list[str] | None = None
+    method: Literal["light", "general", "ner"] = "light"
     with_resolution: bool = True
     with_community: bool = True
     retry_attempts: int = Field(default=2, ge=1, le=10)

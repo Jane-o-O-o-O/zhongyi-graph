@@ -4,17 +4,61 @@ from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandida
 
 
 class GraphExtractor:
-    def __init__(self, llm_extractor=None):
+    def __init__(self, llm_extractor=None, method: str = "light"):
         self.llm_extractor = llm_extractor
+        self.method = _normalize_method(method)
 
     def extract(
         self,
         chunks: list[DocumentChunk],
         hint_terms: list[str] | None = None,
     ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        if self.method == "ner":
+            return self._extract_with_ner(chunks)
         if self.llm_extractor:
             return self._extract_with_llm(chunks, hint_terms=hint_terms or [])
         return [], []
+
+    def _extract_with_ner(
+        self,
+        chunks: list[DocumentChunk],
+    ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        entities: dict[str, EntityCandidate] = {}
+        relations: dict[str, RelationCandidate] = {}
+        for chunk in chunks:
+            found = _ner_entities(chunk.content)
+            for name, label in found:
+                entity_id = _entity_id(label, name)
+                existing = entities.get(entity_id)
+                chunk_ids = [chunk.chunk_id]
+                if existing:
+                    chunk_ids = sorted(set(existing.source_chunk_ids + chunk_ids))
+                entities[entity_id] = EntityCandidate(
+                    entity_id=entity_id,
+                    name=name,
+                    label=label,
+                    normalized_name=name,
+                    source_chunk_ids=chunk_ids,
+                    confidence=0.65,
+                )
+            for source_name, source_label, target_name, target_label, relation in _ner_relations(found):
+                source_id = _entity_id(source_label, source_name)
+                target_id = _entity_id(target_label, target_name)
+                relation_id = f"relation:{source_id}:{relation}:{target_id}"
+                existing = relations.get(relation_id)
+                evidence_chunk_ids = [chunk.chunk_id]
+                if existing:
+                    evidence_chunk_ids = sorted(set(existing.evidence_chunk_ids + evidence_chunk_ids))
+                relations[relation_id] = RelationCandidate(
+                    relation_id=relation_id,
+                    source_entity_id=source_id,
+                    target_entity_id=target_id,
+                    relation=relation,
+                    display=_display_for_relation(relation),
+                    evidence_chunk_ids=evidence_chunk_ids,
+                    confidence=0.6,
+                )
+        return list(entities.values()), list(relations.values())
 
     def _extract_with_llm(
         self,
@@ -191,3 +235,60 @@ def _display_for_relation(relation: str) -> str:
         "TREATS": "主治",
         "RELATED_TO": "相关",
     }.get(relation, "相关")
+
+
+def _normalize_method(method: str) -> str:
+    normalized = str(method or "light").strip().lower()
+    return normalized if normalized in {"light", "general", "ner"} else "light"
+
+
+def _ner_entities(text: str) -> list[tuple[str, str]]:
+    terms = {
+        "头痛": "Symptom",
+        "不寐": "Symptom",
+        "失眠": "Symptom",
+        "心脾两虚": "Syndrome",
+        "肝郁化火": "Syndrome",
+        "补益心脾": "Treatment",
+        "养血敛阴": "Function",
+        "归脾汤": "Formula",
+        "白芍": "Herb",
+        "白芍药": "Herb",
+        "党参": "Herb",
+        "柴胡": "Herb",
+        "桂枝": "Herb",
+        "干姜": "Herb",
+    }
+    found = [(name, label) for name, label in terms.items() if name in text]
+    found.sort(key=lambda item: (text.find(item[0]), -len(item[0]), item[0]))
+    return found
+
+
+def _ner_relations(found: list[tuple[str, str]]) -> list[tuple[str, str, str, str, str]]:
+    relations = []
+    for source_name, source_label in found:
+        for target_name, target_label in found:
+            if source_name == target_name:
+                continue
+            relation = _ner_relation_for_labels(source_label, target_label)
+            if relation:
+                relations.append(
+                    (source_name, source_label, target_name, target_label, relation)
+                )
+    return relations
+
+
+def _ner_relation_for_labels(source_label: str, target_label: str) -> str:
+    if source_label == "Symptom" and target_label == "Syndrome":
+        return "MANIFESTS_AS"
+    if source_label == "Syndrome" and target_label == "Treatment":
+        return "RECOMMENDS_TREATMENT"
+    if source_label == "Treatment" and target_label == "Formula":
+        return "RECOMMENDS_FORMULA"
+    if source_label == "Formula" and target_label == "Herb":
+        return "COMPOSED_OF"
+    if source_label == "Herb" and target_label == "Function":
+        return "RELATED_TO"
+    if source_label in {"Formula", "Treatment"} and target_label in {"Symptom", "Syndrome"}:
+        return "TREATS"
+    return ""
