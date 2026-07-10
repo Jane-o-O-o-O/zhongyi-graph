@@ -1,8 +1,19 @@
+import re
 from typing import Any
 
 from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate
 
 DEFAULT_GENERAL_BATCH_TOKEN_LIMIT = 4096
+RAGFLOW_TUPLE_DELIMITER = "<|>"
+RAGFLOW_RECORD_DELIMITER = "##"
+RAGFLOW_COMPLETION_DELIMITER = "<|COMPLETE|>"
+RAGFLOW_CONTINUE_PROMPT = (
+    "MANY entities were missed in the last extraction. Add them below using the same format:"
+)
+RAGFLOW_LOOP_PROMPT = (
+    "It appears some entities may have still been missed. Answer Y if there are more entities to add, otherwise N."
+)
+RAGFLOW_MAX_GLEANINGS = 2
 
 
 class GraphExtractor:
@@ -34,6 +45,8 @@ class GraphExtractor:
         chunks: list[DocumentChunk],
     ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
         if not hasattr(self.llm_extractor, "extract_chunks_batch"):
+            if hasattr(self.llm_extractor, "chat"):
+                return self._extract_with_ragflow_general(chunks)
             return self._extract_with_llm(chunks, hint_terms=[])
         batches = _general_extraction_batches(chunks, self.batch_token_limit)
         if not batches:
@@ -54,6 +67,54 @@ class GraphExtractor:
         except Exception:
             return [], []
         return list(entities.values()), list(relations.values())
+
+    def _extract_with_ragflow_general(
+        self,
+        chunks: list[DocumentChunk],
+    ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        entities: dict[str, EntityCandidate] = {}
+        relations: dict[str, RelationCandidate] = {}
+        for chunk in chunks:
+            if not chunk.content.strip():
+                continue
+            try:
+                extracted = self._extract_ragflow_general_chunk(chunk)
+            except Exception:
+                continue
+            _merge_extracted_payload(entities, relations, chunk, extracted)
+        return list(entities.values()), list(relations.values())
+
+    def _extract_ragflow_general_chunk(self, chunk: DocumentChunk) -> dict:
+        system_prompt = _ragflow_general_prompt(chunk.content)
+        response = _call_ragflow_general_chat(
+            self.llm_extractor,
+            system_prompt,
+            [{"role": "user", "content": "Output:"}],
+            {},
+        )
+        results = response or ""
+        history = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": response or ""},
+        ]
+        for index in range(RAGFLOW_MAX_GLEANINGS):
+            history.append({"role": "user", "content": RAGFLOW_CONTINUE_PROMPT})
+            response = _call_ragflow_general_chat(self.llm_extractor, "", history, {})
+            results += response or ""
+            if index >= RAGFLOW_MAX_GLEANINGS - 1:
+                break
+            history.append({"role": "assistant", "content": response or ""})
+            history.append({"role": "user", "content": RAGFLOW_LOOP_PROMPT})
+            continuation = _call_ragflow_general_chat(
+                self.llm_extractor,
+                "",
+                history,
+                {"max_tokens": 1},
+            )
+            if str(continuation or "").strip().upper() != "Y":
+                break
+            history.append({"role": "assistant", "content": "Y"})
+        return _ragflow_tuple_payload(results)
 
     def _extract_with_ner(
         self,
@@ -150,6 +211,104 @@ def _chunk_token_count(chunk: DocumentChunk) -> int:
     if chunk.token_count > 0:
         return chunk.token_count
     return max(1, len(chunk.content.strip()))
+
+
+def _ragflow_general_prompt(content: str) -> str:
+    return (
+        "You are a traditional Chinese medicine knowledge graph extractor. "
+        "Extract entity and relationship records from the input text using "
+        f"{RAGFLOW_TUPLE_DELIMITER} as tuple delimiter, "
+        f"{RAGFLOW_RECORD_DELIMITER} as record delimiter, and "
+        f"{RAGFLOW_COMPLETION_DELIMITER} when complete. "
+        "Entity records use: (\"entity\"<|>name<|>type<|>description). "
+        "Relationship records use: "
+        "(\"relationship\"<|>source<|>target<|>description<|>keywords<|>weight). "
+        f"Input text: {content}"
+    )
+
+
+def _call_ragflow_general_chat(llm_extractor, system: str, history: list[dict], gen_conf: dict) -> str:
+    chat = getattr(llm_extractor, "chat")
+    history_payload = [dict(item) for item in history]
+    gen_conf_payload = dict(gen_conf)
+    try:
+        response = chat(system, history_payload, gen_conf_payload)
+    except TypeError:
+        response = chat(system, history_payload)
+    if response is None:
+        return ""
+    return response if isinstance(response, str) else str(response)
+
+
+def _ragflow_tuple_payload(text: str) -> dict:
+    entities: list[dict] = []
+    relations: list[dict] = []
+    for record in _ragflow_tuple_records(text):
+        attributes = [
+            _unquote_ragflow_attr(value)
+            for value in record.split(RAGFLOW_TUPLE_DELIMITER)
+            if value.strip()
+        ]
+        if len(attributes) < 4:
+            continue
+        record_type = attributes[0].lower()
+        if record_type == "entity":
+            entities.append(
+                {
+                    "name": attributes[1],
+                    "label": attributes[2],
+                    "description": attributes[3],
+                    "confidence": 0.75,
+                }
+            )
+            continue
+        if record_type != "relationship" or len(attributes) < 5:
+            continue
+        keyword = attributes[4]
+        relation = _normalize_relation(keyword or attributes[3])
+        relations.append(
+            {
+                "source": attributes[1],
+                "target": attributes[2],
+                "relation": relation,
+                "display": keyword or _display_for_relation(relation),
+                "description": attributes[3],
+                "confidence": _float_or_default(attributes[-1], 0.72),
+            }
+        )
+    return {"entities": entities, "relations": relations}
+
+
+def _ragflow_tuple_records(text: str) -> list[str]:
+    parts = re.split(
+        "|".join(
+            [
+                re.escape(RAGFLOW_RECORD_DELIMITER),
+                re.escape(RAGFLOW_COMPLETION_DELIMITER),
+            ]
+        ),
+        text,
+    )
+    records: list[str] = []
+    for part in parts:
+        match = re.search(r"\((.*)\)", part.strip())
+        if match:
+            records.append(match.group(1).strip())
+    return records
+
+
+def _unquote_ragflow_attr(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1].strip()
+    return value
+
+
+def _float_or_default(value: str, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _merge_extracted_payload(

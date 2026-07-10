@@ -295,6 +295,70 @@ def test_graph_extractor_general_method_splits_batches_by_token_limit():
     assert relations == []
 
 
+def test_graph_extractor_general_method_parses_ragflow_tuple_records_with_gleaning():
+    class FakeRagflowGeneralChat:
+        def __init__(self):
+            self.calls = []
+            self.responses = [
+                (
+                    '("entity"<|>"失眠"<|>"Symptom"<|>"睡眠障碍")##'
+                    '("entity"<|>"心脾两虚"<|>"Syndrome"<|>"心脾亏虚证候")##'
+                    '("relationship"<|>"失眠"<|>"心脾两虚"<|>"失眠可辨为心脾两虚"<|>"可辨为"<|>2.0)'
+                    "<|COMPLETE|>"
+                ),
+                (
+                    '("entity"<|>"归脾汤"<|>"Formula"<|>"补益心脾方剂")##'
+                    '("relationship"<|>"心脾两虚"<|>"归脾汤"<|>"心脾两虚可用归脾汤"<|>"推荐方剂"<|>1.5)'
+                    "<|COMPLETE|>"
+                ),
+                "N",
+            ]
+
+        def chat(self, system, history, gen_conf=None):
+            self.calls.append(
+                {
+                    "system": system,
+                    "history": history,
+                    "gen_conf": gen_conf or {},
+                }
+            )
+            return self.responses.pop(0)
+
+    llm = FakeRagflowGeneralChat()
+    chunk = DocumentChunk(
+        chunk_id="chunk:ragflow-general:1",
+        source_id="source:ragflow-general",
+        page_id="page:ragflow-general:1",
+        chunk_index=1,
+        content="失眠可辨为心脾两虚，方选归脾汤。",
+    )
+
+    entities, relations = GraphExtractor(
+        llm_extractor=llm,
+        method="general",
+    ).extract([chunk])
+
+    assert [call["history"][-1]["content"] for call in llm.calls] == [
+        "Output:",
+        "MANY entities were missed in the last extraction. Add them below using the same format:",
+        "It appears some entities may have still been missed. Answer Y if there are more entities to add, otherwise N.",
+    ]
+    assert {entity.name for entity in entities} == {"失眠", "心脾两虚", "归脾汤"}
+    assert any(
+        relation.source_entity_id == "entity:symptom:失眠"
+        and relation.target_entity_id == "entity:syndrome:心脾两虚"
+        and relation.relation == "MANIFESTS_AS"
+        and relation.evidence_chunk_ids == [chunk.chunk_id]
+        for relation in relations
+    )
+    assert any(
+        relation.source_entity_id == "entity:syndrome:心脾两虚"
+        and relation.target_entity_id == "entity:formula:归脾汤"
+        and relation.relation == "RECOMMENDS_FORMULA"
+        for relation in relations
+    )
+
+
 def test_graph_extractor_normalizes_llm_symptom_aliases_after_extraction():
     class FakeLlmExtractor:
         def extract_chunk(self, text, hints=None):
