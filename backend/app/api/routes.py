@@ -4,13 +4,14 @@ from pathlib import Path
 import tempfile
 
 import httpx
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile
 
 from app.core.config import get_settings
 from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import IngestionJob, SourceManifest
 from app.models.query import (
     GraphBuildRequest,
+    GraphBuildRunResponse,
     GraphBuildResponse,
     GraphOverviewResponse,
     QueryRequest,
@@ -257,6 +258,14 @@ def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBui
         graph_refreshed=graph_refreshed,
         **asdict(summary),
     )
+
+
+@router.get("/retrieval/graphrag/runs/{run_id}", response_model=GraphBuildRunResponse)
+def get_ragflow_graphrag_run(run_id: str) -> GraphBuildRunResponse:
+    run = ragflow_repository.get_graphrag_build_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="GraphRAG build run not found")
+    return GraphBuildRunResponse(**asdict(run))
 
 
 def _refresh_question_graph_from_ragflow_global_artifact() -> bool:

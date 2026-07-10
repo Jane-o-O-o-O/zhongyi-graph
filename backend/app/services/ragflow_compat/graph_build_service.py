@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 import json
-from dataclasses import dataclass
+from uuid import uuid4
 
 from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import EntityCandidate, RelationCandidate
@@ -12,12 +14,16 @@ from app.services.ragflow_compat.community_reports import RagflowGraphCommunityR
 from app.services.ragflow_compat.entity_resolution import RagflowGraphEntityResolutionService
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
-from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
+from app.services.ragflow_compat.schemas import (
+    RetrievalGraphArtifact,
+    RetrievalGraphRagBuildRun,
+)
 from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
 
 
 @dataclass(frozen=True)
 class RagflowGraphBuildSummary:
+    run_id: str
     sources_total: int
     sources_skipped: int
     sources_built: int
@@ -66,7 +72,72 @@ class RagflowGraphBuildService:
         with_resolution: bool = True,
         with_community: bool = True,
     ) -> RagflowGraphBuildSummary:
+        run_id = f"graphrag:build:{uuid4().hex}"
+        started_at = _utc_now()
         selected_source_ids = self._source_ids(source_ids)
+        self._save_build_run(
+            run_id=run_id,
+            status="running",
+            started_at=started_at,
+            finished_at="",
+            total=len(selected_source_ids),
+            processed=0,
+            failed=0,
+            metadata={
+                "source_ids": selected_source_ids,
+                "with_resolution": with_resolution,
+                "with_community": with_community,
+            },
+        )
+        try:
+            summary = self._build_selected_sources(
+                run_id=run_id,
+                selected_source_ids=selected_source_ids,
+                with_resolution=with_resolution,
+                with_community=with_community,
+            )
+        except Exception as exc:
+            self._save_build_run(
+                run_id=run_id,
+                status="failed",
+                started_at=started_at,
+                finished_at=_utc_now(),
+                total=len(selected_source_ids),
+                processed=0,
+                failed=1,
+                metadata={
+                    "source_ids": selected_source_ids,
+                    "with_resolution": with_resolution,
+                    "with_community": with_community,
+                    "error": repr(exc),
+                },
+            )
+            raise
+        self._save_build_run(
+            run_id=run_id,
+            status="completed",
+            started_at=started_at,
+            finished_at=_utc_now(),
+            total=summary.sources_total,
+            processed=summary.sources_total,
+            failed=summary.sources_failed,
+            metadata={
+                "source_ids": selected_source_ids,
+                "with_resolution": with_resolution,
+                "with_community": with_community,
+                "summary": asdict(summary),
+            },
+        )
+        return summary
+
+    def _build_selected_sources(
+        self,
+        *,
+        run_id: str,
+        selected_source_ids: list[str],
+        with_resolution: bool,
+        with_community: bool,
+    ) -> RagflowGraphBuildSummary:
         skipped = 0
         built = 0
         failed = 0
@@ -154,6 +225,7 @@ class RagflowGraphBuildService:
                     PHASE_COMMUNITY
                 )
         return RagflowGraphBuildSummary(
+            run_id=run_id,
             sources_total=len(selected_source_ids),
             sources_skipped=skipped,
             sources_built=built,
@@ -177,6 +249,31 @@ class RagflowGraphBuildService:
         if source_ids is not None:
             return list(dict.fromkeys(source_ids))
         return [source.source_id for source in self.ingestion_repository.list_sources()]
+
+    def _save_build_run(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        started_at: str,
+        finished_at: str,
+        total: int,
+        processed: int,
+        failed: int,
+        metadata: dict,
+    ) -> None:
+        self.retrieval_repository.save_graphrag_build_run(
+            RetrievalGraphRagBuildRun(
+                run_id=run_id,
+                status=status,
+                started_at=started_at,
+                finished_at=finished_at,
+                total=total,
+                processed=processed,
+                failed=failed,
+                metadata=metadata,
+            )
+        )
 
 
 def _graph_from_candidates(
@@ -213,6 +310,10 @@ def _graph_from_candidates(
             )
         )
     return list(nodes_by_id.values()), edges
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 def _subgraph_artifact(

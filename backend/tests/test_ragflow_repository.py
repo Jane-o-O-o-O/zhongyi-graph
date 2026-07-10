@@ -3,6 +3,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
+    RetrievalGraphRagBuildRun,
     RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
@@ -216,6 +217,48 @@ def test_repository_manages_graphrag_checkpoints_and_phase_markers():
     assert repository.has_graphrag_phase_marker("resolution_done") is True
     repository.clear_graphrag_phase_markers(["resolution_done"])
     assert repository.has_graphrag_phase_marker("resolution_done") is False
+
+
+def test_repository_persists_graphrag_build_runs_in_sync_state():
+    repository = _repository()
+    running = RetrievalGraphRagBuildRun(
+        run_id="graphrag:build:test",
+        status="running",
+        started_at="2026-07-10T00:00:00Z",
+        finished_at="",
+        total=2,
+        processed=0,
+        failed=0,
+        metadata={
+            "source_ids": ["doc:a", "doc:b"],
+            "with_resolution": True,
+            "with_community": False,
+        },
+    )
+
+    repository.save_graphrag_build_run(running)
+
+    assert repository.get_graphrag_build_run("graphrag:build:test") == running
+
+    completed = RetrievalGraphRagBuildRun(
+        run_id="graphrag:build:test",
+        status="completed",
+        started_at="2026-07-10T00:00:00Z",
+        finished_at="2026-07-10T00:00:10Z",
+        total=2,
+        processed=2,
+        failed=0,
+        metadata={
+            "source_ids": ["doc:a", "doc:b"],
+            "with_resolution": True,
+            "with_community": False,
+            "summary": {"global_nodes": 18, "global_edges": 24},
+        },
+    )
+    repository.save_graphrag_build_run(completed)
+
+    assert repository.get_graphrag_build_run("graphrag:build:test") == completed
+    assert repository.get_graphrag_build_run("missing") is None
 
 
 def test_repository_audit_counts_vectors_and_chunk_lengths():

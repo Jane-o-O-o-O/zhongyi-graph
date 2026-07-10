@@ -14,6 +14,7 @@ from app.services.ragflow_compat.schemas import (
     RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
+    RetrievalGraphRagBuildRun,
     RetrievalGraphArtifact,
     RetrievalKgEntity,
     RetrievalKgRelation,
@@ -31,6 +32,7 @@ from app.services.ragflow_compat.tables import (
     retrieval_kg_relations_table,
     retrieval_kg_type_samples_table,
     retrieval_metadata,
+    retrieval_sync_state_table,
 )
 
 T = TypeVar("T")
@@ -216,6 +218,43 @@ class RagflowRetrievalRepository:
                 delete(retrieval_graphrag_phase_markers_table)
                 .where(retrieval_graphrag_phase_markers_table.c.phase.in_(clean_phases))
             )
+
+    def save_graphrag_build_run(self, run: RetrievalGraphRagBuildRun) -> None:
+        if not run.run_id:
+            return
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(retrieval_sync_state_table)
+                .where(retrieval_sync_state_table.c.sync_key == run.run_id)
+            )
+            connection.execute(
+                retrieval_sync_state_table.insert(),
+                {
+                    "sync_key": run.run_id,
+                    "status": run.status,
+                    "started_at": run.started_at,
+                    "finished_at": run.finished_at,
+                    "cursor": run.cursor,
+                    "total": run.total,
+                    "processed": run.processed,
+                    "failed": run.failed,
+                    "metadata": run.metadata,
+                },
+            )
+
+    def get_graphrag_build_run(self, run_id: str) -> RetrievalGraphRagBuildRun | None:
+        if not run_id:
+            return None
+        statement = (
+            select(retrieval_sync_state_table)
+            .where(retrieval_sync_state_table.c.sync_key == run_id)
+            .limit(1)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            if not row:
+                return None
+            return _graphrag_build_run_from_row(row._mapping)
 
     def update_chunk_vector_status(self, chunk_id: str, *, point_id: str, status: str) -> None:
         if self.engine.dialect.name != "postgresql":
@@ -1133,6 +1172,20 @@ class RagflowRetrievalRepository:
 
 def _row(value) -> dict[str, Any]:
     return asdict(value)
+
+
+def _graphrag_build_run_from_row(row) -> RetrievalGraphRagBuildRun:
+    return RetrievalGraphRagBuildRun(
+        run_id=row["sync_key"],
+        status=row["status"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+        cursor=row["cursor"],
+        total=row["total"],
+        processed=row["processed"],
+        failed=row["failed"],
+        metadata=row["metadata"],
+    )
 
 
 def _utc_now() -> str:

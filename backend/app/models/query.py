@@ -60,6 +60,7 @@ class GraphBuildRequest(BaseModel):
 
 class GraphBuildResponse(BaseModel):
     status: str
+    run_id: str
     sources_total: int
     sources_skipped: int
     sources_built: int
@@ -78,3 +79,15 @@ class GraphBuildResponse(BaseModel):
     community_reports_replayed: int = 0
     community_reports_generated: int = 0
     graph_refreshed: bool
+
+
+class GraphBuildRunResponse(BaseModel):
+    run_id: str
+    status: str
+    started_at: str = ""
+    finished_at: str = ""
+    cursor: str = ""
+    total: int = 0
+    processed: int = 0
+    failed: int = 0
+    metadata: dict = Field(default_factory=dict)

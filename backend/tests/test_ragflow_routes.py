@@ -159,6 +159,7 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+    assert body["run_id"].startswith("graphrag:build:")
     assert body["sources_total"] == 1
     assert body["sources_built"] == 1
     assert body["sources_failed"] == 0
@@ -177,6 +178,19 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     overview = TestClient(app).get("/api/graph/overview", params={"limit": 10})
     assert overview.status_code == 200
     assert {node["name"] for node in overview.json()["graph_nodes"]} == {"白芍", "养血敛阴"}
+
+    run_response = TestClient(app).get(
+        f"/api/retrieval/graphrag/runs/{body['run_id']}"
+    )
+    assert run_response.status_code == 200
+    run_body = run_response.json()
+    assert run_body["run_id"] == body["run_id"]
+    assert run_body["status"] == "completed"
+    assert run_body["total"] == 1
+    assert run_body["processed"] == 1
+    assert run_body["failed"] == 0
+    assert run_body["metadata"]["source_ids"] == ["doc:a"]
+    assert run_body["metadata"]["summary"]["global_nodes"] == 2
 
 
 def test_graphrag_build_endpoint_uses_llm_resolution_client(monkeypatch):
