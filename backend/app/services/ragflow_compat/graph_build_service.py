@@ -7,6 +7,7 @@ from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import EntityCandidate, RelationCandidate
 from app.services.graph_extractor import GraphExtractor
 from app.services.ingestion_repository import IngestionRepository
+from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
 
@@ -66,6 +67,14 @@ class RagflowGraphBuildService:
             self.retrieval_repository.save_graph_artifact(
                 _global_graph_artifact(merged_nodes, merged_edges, merged_sources)
             )
+        resolution_marker_cleared = False
+        community_marker_cleared = False
+        if built > 0:
+            self.retrieval_repository.clear_graphrag_phase_markers(
+                [PHASE_RESOLUTION, PHASE_COMMUNITY]
+            )
+            resolution_marker_cleared = True
+            community_marker_cleared = True
         return RagflowGraphBuildSummary(
             sources_total=len(selected_source_ids),
             sources_skipped=skipped,
@@ -75,6 +84,8 @@ class RagflowGraphBuildService:
             global_nodes=len(merged_nodes),
             global_edges=len(merged_edges),
             graph_changed=built > 0,
+            resolution_marker_cleared=resolution_marker_cleared,
+            community_marker_cleared=community_marker_cleared,
         )
 
     def _source_ids(self, source_ids: list[str] | None) -> list[str]:

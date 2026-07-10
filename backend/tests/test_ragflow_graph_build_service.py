@@ -14,6 +14,7 @@ from app.models.ingestion import (
 )
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
+from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
 
@@ -187,3 +188,51 @@ def test_build_merges_available_subgraphs_into_global_graph_artifact():
     payload = json.loads(global_artifact.content_with_weight)
     assert {node["name"] for node in payload["nodes"]} == {"白芍", "养血敛阴"}
     assert len(payload["edges"]) == 1
+
+
+def test_build_clears_phase_markers_when_new_subgraph_changes_graph():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    retrieval_repository.set_graphrag_phase_marker(PHASE_RESOLUTION)
+    retrieval_repository.set_graphrag_phase_marker(PHASE_COMMUNITY)
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=FixedExtractor(),
+    ).build(["doc:a"])
+
+    assert summary.graph_changed is True
+    assert summary.resolution_marker_cleared is True
+    assert summary.community_marker_cleared is True
+
+
+def test_build_keeps_phase_markers_on_pure_resume():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    retrieval_repository.save_graph_artifact(
+        RetrievalGraphArtifact(
+            artifact_id="subgraph:doc:a",
+            artifact_type="subgraph",
+            content_with_weight=json.dumps({"nodes": [], "edges": []}, ensure_ascii=False),
+            source_id=["doc:a"],
+            node_count=0,
+            edge_count=0,
+        )
+    )
+    retrieval_repository.set_graphrag_phase_marker(PHASE_RESOLUTION)
+    retrieval_repository.set_graphrag_phase_marker(PHASE_COMMUNITY)
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=RecordingExtractor(),
+    ).build(["doc:a"])
+
+    assert summary.graph_changed is False
+    assert summary.resolution_marker_cleared is False
+    assert summary.community_marker_cleared is False
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_RESOLUTION) is True
+    assert retrieval_repository.has_graphrag_phase_marker(PHASE_COMMUNITY) is True
