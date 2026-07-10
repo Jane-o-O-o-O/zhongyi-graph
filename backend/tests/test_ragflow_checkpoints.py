@@ -1,8 +1,13 @@
+import pytest
+
 from app.services.ragflow_compat.checkpoints import (
     COMMUNITY_CHECKPOINT,
     RESOLUTION_CHECKPOINT,
+    cleanup_checkpoints,
     community_checkpoint_key,
+    load_checkpoints,
     resolution_checkpoint_key,
+    save_checkpoint,
     stable_checkpoint_key,
 )
 from app.services.ragflow_compat.phase_markers import (
@@ -10,6 +15,13 @@ from app.services.ragflow_compat.phase_markers import (
     PHASE_COMMUNITY,
     PHASE_RESOLUTION,
 )
+from app.services.ragflow_compat.repository import RagflowRetrievalRepository
+
+
+def _repository():
+    from sqlalchemy import create_engine
+
+    return RagflowRetrievalRepository(create_engine("sqlite:///:memory:"))
 
 
 def test_graphrag_checkpoint_constants_match_ragflow_names():
@@ -45,3 +57,22 @@ def test_graphrag_phase_marker_constants_match_ragflow_names():
     assert PHASE_RESOLUTION == "resolution_done"
     assert PHASE_COMMUNITY == "community_done"
     assert ALL_PHASES == (PHASE_RESOLUTION, PHASE_COMMUNITY)
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_adapter_persists_payloads_through_repository():
+    repository = _repository()
+    checkpoint_key = resolution_checkpoint_key("Herb", [("白芍", "白芍药")])
+
+    assert await save_checkpoint(
+        repository,
+        RESOLUTION_CHECKPOINT,
+        checkpoint_key,
+        {"pairs": [["白芍", "白芍药"]]},
+    )
+
+    assert await load_checkpoints(repository, RESOLUTION_CHECKPOINT) == {
+        checkpoint_key: {"pairs": [["白芍", "白芍药"]]},
+    }
+    assert await cleanup_checkpoints(repository, RESOLUTION_CHECKPOINT) == 1
+    assert await load_checkpoints(repository, RESOLUTION_CHECKPOINT) == {}
