@@ -123,6 +123,18 @@ def test_ragflow_compatible_retrieval_service_returns_query_response_with_diagno
     assert response.diagnostics["chunk_hits"] == 1
     assert response.diagnostics["community_reports"] == 1
     assert response.diagnostics["kg_context_docnm"] == "Related content in Knowledge Graph"
+    trace = response.diagnostics["retrieval_trace"]
+    assert trace["rewrite"]["source"] == "rules"
+    assert trace["rewrite"]["answer_type_keywords"] == ["Syndrome"]
+    assert trace["fulltext"]["hits"][0]["chunk_id"] == "chunk:doc:0001"
+    assert trace["fulltext"]["hits"][0]["title"] == "不寐"
+    assert trace["kg"]["entities"][0]["entity"] == "失眠"
+    assert any(
+        {relation["from_entity"], relation["to_entity"]} == {"失眠", "心脾两虚"}
+        for relation in trace["kg"]["relations"]
+    )
+    assert trace["kg"]["community_reports"][0]["report_id"] == "community:失眠"
+    assert trace["context"]["sections"] == ["entities", "relations", "community_reports"]
     kg_context = response.diagnostics["kg_context"]
     assert "---- Entities ----" in kg_context
     assert "Entity,Score,Description" in kg_context

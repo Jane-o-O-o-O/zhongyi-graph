@@ -43,10 +43,11 @@ class RagflowCompatibleRetrievalService:
         fulltext = self.fulltext_retriever.retrieve(question, top_k=8)
         fallback_answer_types = _infer_answer_types(question)
         fallback_entities = _entities_from_keywords(fulltext.keywords)
+        type_pool = _type_pool(self.repository)
         rewrite = _query_rewrite(
             self.query_rewriter,
             question,
-            type_pool=_type_pool(self.repository),
+            type_pool=type_pool,
         )
         answer_type_keywords = rewrite["answer_type_keywords"] or fallback_answer_types
         entities_from_query = rewrite["entities_from_query"] or fallback_entities
@@ -58,6 +59,19 @@ class RagflowCompatibleRetrievalService:
         )
         evidence = assemble_evidence_cards(fulltext.hits, kg.graph_edges)
         kg_context = _build_kg_context(kg, max_token=max_token)
+        retrieval_trace = _retrieval_trace(
+            question=question,
+            rewrite=rewrite,
+            type_pool=type_pool,
+            fallback_answer_types=fallback_answer_types,
+            fallback_entities=fallback_entities,
+            answer_type_keywords=answer_type_keywords,
+            entities_from_query=entities_from_query,
+            fulltext=fulltext,
+            kg=kg,
+            kg_context=kg_context,
+            max_token=max_token,
+        )
         kg_evidence = [kg_context] if kg_context else []
         entities = _unique([entity.entity for entity in kg.entities] + entities_from_query)
         graph_paths = [
@@ -92,6 +106,7 @@ class RagflowCompatibleRetrievalService:
                 "kg_context_docnm": "Related content in Knowledge Graph",
                 "kg_context_max_token": max_token,
                 "kg_context": kg_context,
+                "retrieval_trace": retrieval_trace,
             },
         )
 
@@ -211,6 +226,104 @@ def _build_kg_context(kg, *, max_token: int = 8196) -> str:
     return "".join(sections)
 
 
+def _retrieval_trace(
+    *,
+    question: str,
+    rewrite: dict,
+    type_pool: dict[str, list[str]],
+    fallback_answer_types: list[str],
+    fallback_entities: list[str],
+    answer_type_keywords: list[str],
+    entities_from_query: list[str],
+    fulltext,
+    kg,
+    kg_context: str,
+    max_token: int,
+) -> dict:
+    return {
+        "question": question,
+        "rewrite": {
+            "source": rewrite["source"],
+            "type_pool": type_pool,
+            "fallback_answer_type_keywords": fallback_answer_types,
+            "fallback_entities": fallback_entities,
+            "answer_type_keywords": answer_type_keywords,
+            "entities_from_query": entities_from_query,
+        },
+        "fulltext": {
+            "keywords": fulltext.keywords,
+            "hits": [_trace_chunk_hit(hit) for hit in fulltext.hits],
+        },
+        "kg": {
+            "entities": [_trace_entity(entity) for entity in kg.entities],
+            "relations": [_trace_relation(relation) for relation in kg.relations],
+            "community_reports": [
+                _trace_community_report(report)
+                for report in kg.community_reports
+            ],
+            "graph_nodes": len(kg.graph_nodes),
+            "graph_edges": len(kg.graph_edges),
+        },
+        "context": {
+            "max_token": max_token,
+            "length": len(kg_context),
+            "sections": _kg_context_sections(kg_context),
+        },
+    }
+
+
+def _trace_chunk_hit(hit) -> dict:
+    chunk = hit.chunk
+    return {
+        "chunk_id": chunk.chunk_id,
+        "doc_id": chunk.doc_id,
+        "source_id": chunk.source_id,
+        "title": chunk.title,
+        "score": _round_score(hit.score),
+        "keyword_score": _round_score(hit.keyword_score),
+        "vector_score": _round_score(hit.vector_score),
+        "rerank_score": _round_score(hit.rerank_score),
+    }
+
+
+def _trace_entity(entity) -> dict:
+    return {
+        "entity": entity.entity,
+        "score": _round_score(entity.score),
+        "description": _description_text(entity.description),
+    }
+
+
+def _trace_relation(relation) -> dict:
+    return {
+        "from_entity": relation.from_entity,
+        "to_entity": relation.to_entity,
+        "score": _round_score(relation.score),
+        "description": _description_text(relation.description),
+    }
+
+
+def _trace_community_report(report) -> dict:
+    return {
+        "report_id": report.report_id,
+        "title": report.title,
+        "weight": _round_score(report.weight_flt),
+        "entities": report.entities_kwd,
+        "source_id": report.source_id,
+    }
+
+
+def _kg_context_sections(kg_context: str) -> list[str]:
+    sections: list[str] = []
+    if "---- Entities ----" in kg_context:
+        sections.append("entities")
+    if "---- Relations ----" in kg_context:
+        sections.append("relations")
+    if "---- Community Report ----" in kg_context:
+        sections.append("community_reports")
+    return sections
+
+
 def _csv_rows(fieldnames: list[str], rows: list[dict[str, str]]) -> str:
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=fieldnames, lineterminator="\n")
@@ -244,6 +357,13 @@ def _description_text(value: str) -> str:
 
 def _context_token_count(value: str) -> int:
     return max(1, len(value))
+
+
+def _round_score(value) -> float:
+    try:
+        return round(float(value), 6)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _query_rewrite(query_rewriter, question: str, *, type_pool: dict[str, list[str]]) -> dict:
