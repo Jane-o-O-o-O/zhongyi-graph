@@ -28,8 +28,10 @@ class GraphCommunitySummaryResult:
             summary = self.by_community_id.get(community_id)
             if not summary:
                 continue
+            communities = _unique_names([*node.properties.get("communities", []), summary.title])
             node.properties.update(
                 {
+                    "communities": communities,
                     "community_title": summary.title,
                     "community_summary": summary.summary,
                     "community_size": summary.size,
