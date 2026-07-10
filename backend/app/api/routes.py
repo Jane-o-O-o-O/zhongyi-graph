@@ -28,6 +28,10 @@ from app.services.question_service import QuestionService
 from app.services.graph_extractor import GraphExtractor
 from app.services.model_clients import StructuredExtractionClient
 from app.services.ragflow_compat.doc_store import RagflowDocStore, RagflowVectorSearchClient
+from app.services.ragflow_compat.entity_resolution import (
+    LlmEntityResolutionDecider,
+    RagflowGraphEntityResolutionService,
+)
 from app.services.ragflow_compat.fulltext import RagflowFulltextRetriever
 from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
 from app.services.ragflow_compat.kg_search import RagflowKgSearch
@@ -235,6 +239,9 @@ def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBui
         ingestion_repository=ingestion_repository,
         retrieval_repository=ragflow_repository,
         graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
+        entity_resolution_service=RagflowGraphEntityResolutionService(
+            decider=LlmEntityResolutionDecider(structured_extractor)
+        ),
     ).build(
         request.source_ids,
         with_resolution=request.with_resolution,

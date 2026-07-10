@@ -66,6 +66,37 @@ class FixedRouteExtractor:
         ]
 
 
+class AliasRouteExtractor:
+    def extract(self, chunks, hint_terms=None):
+        return [
+            EntityCandidate(
+                entity_id="entity:herb:白芍",
+                name="白芍",
+                label="Herb",
+                normalized_name="白芍",
+                source_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.9,
+            ),
+            EntityCandidate(
+                entity_id="entity:herb:白芍药",
+                name="白芍药",
+                label="Herb",
+                normalized_name="白芍药",
+                source_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.85,
+            ),
+        ], []
+
+
+class RecordingResolutionClient:
+    def __init__(self):
+        self.calls = []
+
+    def resolve_entity_pairs(self, *, entity_type, pairs):
+        self.calls.append((entity_type, pairs))
+        return [("白芍", "白芍药")]
+
+
 def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monkeypatch):
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -129,3 +160,56 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     overview = TestClient(app).get("/api/graph/overview", params={"limit": 10})
     assert overview.status_code == 200
     assert {node["name"] for node in overview.json()["graph_nodes"]} == {"白芍", "养血敛阴"}
+
+
+def test_graphrag_build_endpoint_uses_llm_resolution_client(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    ingestion_repository = IngestionRepository(engine)
+    retrieval_repository = RagflowRetrievalRepository(engine)
+    ingestion_repository.upsert_source(
+        SourceManifest(
+            source_id="doc:a",
+            filename="doc:a.txt",
+            mime_type="text/plain",
+            checksum="checksum:doc:a",
+            status="parsed",
+        )
+    )
+    ingestion_repository.replace_pages_and_chunks(
+        "doc:a",
+        [],
+        [
+            DocumentChunk(
+                chunk_id="chunk:doc:a:1",
+                source_id="doc:a",
+                page_id="page:doc:a:1",
+                chunk_index=0,
+                content="白芍又名白芍药。",
+                content_type="text",
+                token_count=8,
+            )
+        ],
+    )
+    resolution_client = RecordingResolutionClient()
+    question_service = routes.QuestionService.demo()
+    monkeypatch.setattr(routes, "ingestion_repository", ingestion_repository)
+    monkeypatch.setattr(routes, "ragflow_repository", retrieval_repository)
+    monkeypatch.setattr(routes, "question_service", question_service)
+    monkeypatch.setattr(routes, "structured_extractor", resolution_client)
+    monkeypatch.setattr(routes, "GraphExtractor", lambda llm_extractor=None: AliasRouteExtractor())
+
+    response = TestClient(app).post(
+        "/api/retrieval/graphrag/build",
+        json={"source_ids": ["doc:a"], "with_resolution": True, "with_community": False},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolution_pairs_resolved"] == 1
+    assert body["resolution_pairs_merged"] == 1
+    assert resolution_client.calls == [("Herb", [("白芍", "白芍药")])]

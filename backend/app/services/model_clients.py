@@ -184,6 +184,36 @@ class StructuredExtractionClient:
             user=f"/no_think 问题：{question}",
         )
 
+    def resolve_entity_pairs(
+        self,
+        *,
+        entity_type: str,
+        pairs: Sequence[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        if not pairs:
+            return []
+        payload = self._chat_json(
+            system=(
+                "/no_think 你是中医知识图谱实体消歧器。"
+                "判断每个候选实体对是否表示同一个实体，只输出 JSON。"
+                "必须聚焦实体的关键医学含义，忽略别名、简称、繁简、前后缀等噪声。"
+                "如果两个名称只是相关但不是同一个实体，same 必须为 false。"
+                "输出格式：{\"pairs\":[{\"source\":\"实体A\",\"target\":\"实体B\",\"same\":true}]}"
+            ),
+            user=(
+                "/no_think 实体类型："
+                f"{entity_type}\n候选实体对："
+                + json.dumps(
+                    [
+                        {"source": source, "target": target}
+                        for source, target in pairs
+                    ],
+                    ensure_ascii=False,
+                )
+            ),
+        )
+        return _selected_resolution_pairs(payload, pairs)
+
     def _chat_json(self, *, system: str, user: str) -> dict:
         payload = {
             "model": self.model,
@@ -407,6 +437,40 @@ def _normalize_batch_extraction_payload(payload: dict) -> dict:
     if "unit_id" in payload and ("entities" in payload or "relations" in payload):
         return {"items": [payload]}
     return {"items": []}
+
+
+def _selected_resolution_pairs(
+    payload: dict,
+    requested_pairs: Sequence[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    requested = {tuple(pair): tuple(pair) for pair in requested_pairs}
+    requested.update({(target, source): (source, target) for source, target in requested_pairs})
+    selected: list[tuple[str, str]] = []
+    items = payload.get("pairs", [])
+    if not isinstance(items, list):
+        return selected
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        same_value = item.get("same", item.get("same_entity", item.get("is_same", False)))
+        if not _truthy_resolution_value(same_value):
+            continue
+        source = str(item.get("source", item.get("entity_a", item.get("left", "")))).strip()
+        target = str(item.get("target", item.get("entity_b", item.get("right", "")))).strip()
+        pair = requested.get((source, target))
+        if pair and pair not in selected:
+            selected.append(pair)
+    return selected
+
+
+def _truthy_resolution_value(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "y", "same", "1", "是", "同一"}
+    return False
 
 
 def _focus_text_window(text: str, hints: Sequence[str], window: int = 700) -> str:

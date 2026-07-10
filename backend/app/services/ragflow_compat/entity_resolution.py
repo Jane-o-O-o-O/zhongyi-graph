@@ -36,6 +36,33 @@ class HeuristicEntityResolutionDecider:
         ]
 
 
+class LlmEntityResolutionDecider:
+    def __init__(self, resolution_client):
+        self.resolution_client = resolution_client
+
+    def resolve_pairs(
+        self,
+        entity_type: str,
+        pairs: list[tuple[str, str]],
+        nodes_by_name: dict[str, GraphNode],
+    ) -> list[tuple[str, str]]:
+        del nodes_by_name
+        selected_pairs = self.resolution_client.resolve_entity_pairs(
+            entity_type=entity_type,
+            pairs=pairs,
+        )
+        allowed = {pair: pair for pair in pairs}
+        allowed.update({(target, source): (source, target) for source, target in pairs})
+        result: list[tuple[str, str]] = []
+        for pair in selected_pairs:
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                continue
+            selected = allowed.get((str(pair[0]), str(pair[1])))
+            if selected and selected not in result:
+                result.append(selected)
+        return result
+
+
 class RagflowGraphEntityResolutionService:
     def __init__(self, decider=None):
         self.decider = decider or HeuristicEntityResolutionDecider()
