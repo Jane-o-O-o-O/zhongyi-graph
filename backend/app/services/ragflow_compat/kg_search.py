@@ -38,6 +38,7 @@ class RagflowKgSearch:
         entities_from_query: list[str],
         ent_topn: int = 6,
         rel_topn: int = 6,
+        comm_topn: int = 1,
         ent_sim_threshold: float = 0.0,
         rel_sim_threshold: float = 0.0,
     ) -> KgSearchResult:
@@ -83,7 +84,7 @@ class RagflowKgSearch:
             hit.report
             for hit in self.doc_store.search_community_reports(
                 [entity.entity for entity in scored_entities],
-                top_k=1,
+                top_k=max(0, int(comm_topn)),
             )
         ]
         graph_nodes = self._graph_nodes(scored_entities, ents)

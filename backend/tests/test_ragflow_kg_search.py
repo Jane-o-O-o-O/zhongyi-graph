@@ -93,6 +93,66 @@ def test_kg_search_combines_entity_type_relation_and_nhop_scores():
     assert result.graph_edges[0].target == "syndrome:心脾两虚"
 
 
+def test_kg_search_honors_community_report_topn():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    repository = RagflowRetrievalRepository(engine)
+    repository.replace_kg_entities(
+        [
+            RetrievalKgEntity(
+                entity_id="entity:失眠",
+                entity_name="失眠",
+                entity_type="Symptom",
+                source_node_id="symptom:失眠",
+                content_with_weight='{"description":"失眠 Symptom"}',
+                description="失眠 Symptom",
+                rank_flt=2.0,
+                evidence_chunk_ids=["chunk:1"],
+            )
+        ]
+    )
+    repository.replace_community_reports(
+        [
+            RetrievalCommunityReport(
+                report_id="community:失眠:1",
+                title="失眠核心社区",
+                content_with_weight="社区报告：失眠核心证候。",
+                summary="失眠核心证候",
+                evidences="失眠",
+                entities_kwd=["失眠"],
+                weight_flt=0.9,
+                source_id=["doc"],
+            ),
+            RetrievalCommunityReport(
+                report_id="community:失眠:2",
+                title="失眠治疗社区",
+                content_with_weight="社区报告：失眠治疗关系。",
+                summary="失眠治疗关系",
+                evidences="失眠",
+                entities_kwd=["失眠"],
+                weight_flt=0.8,
+                source_id=["doc"],
+            ),
+        ]
+    )
+
+    result = RagflowKgSearch(RagflowDocStore(repository, EmbeddingClient.demo())).retrieve(
+        "失眠怎么处理？",
+        answer_type_keywords=[],
+        entities_from_query=["失眠"],
+        comm_topn=2,
+    )
+
+    assert [report.title for report in result.community_reports] == [
+        "失眠核心社区",
+        "失眠治疗社区",
+    ]
+
+
 def test_kg_search_does_not_promote_type_only_entities_without_query_overlap():
     engine = create_engine(
         "sqlite+pysqlite://",
