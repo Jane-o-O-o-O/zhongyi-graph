@@ -8,6 +8,7 @@ from app.models.ingestion import EntityCandidate, RelationCandidate
 from app.services.graph_extractor import GraphExtractor
 from app.services.graph_service import GraphService
 from app.services.ingestion_repository import IngestionRepository
+from app.services.ragflow_compat.community_reports import RagflowGraphCommunityReportService
 from app.services.ragflow_compat.entity_resolution import RagflowGraphEntityResolutionService
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
@@ -32,6 +33,8 @@ class RagflowGraphBuildSummary:
     resolution_pairs_replayed: int = 0
     resolution_pairs_resolved: int = 0
     resolution_pairs_merged: int = 0
+    community_reports_replayed: int = 0
+    community_reports_generated: int = 0
 
 
 class RagflowGraphBuildService:
@@ -42,6 +45,7 @@ class RagflowGraphBuildService:
         retrieval_repository: RagflowRetrievalRepository,
         graph_extractor: GraphExtractor,
         entity_resolution_service: RagflowGraphEntityResolutionService | None = None,
+        community_report_service: RagflowGraphCommunityReportService | None = None,
         chunk_batch_size: int = 1000,
     ):
         self.ingestion_repository = ingestion_repository
@@ -49,6 +53,9 @@ class RagflowGraphBuildService:
         self.graph_extractor = graph_extractor
         self.entity_resolution_service = (
             entity_resolution_service or RagflowGraphEntityResolutionService()
+        )
+        self.community_report_service = (
+            community_report_service or RagflowGraphCommunityReportService()
         )
         self.chunk_batch_size = chunk_batch_size
 
@@ -115,11 +122,25 @@ class RagflowGraphBuildService:
             community_marker_cleared = True
         resolution_marker_set = False
         community_marker_set = False
+        community_reports_replayed = 0
+        community_reports_generated = 0
         if merged_nodes or merged_edges:
+            graph_service = GraphService(merged_nodes, merged_edges)
+            if with_community:
+                community_result = self.community_report_service.summarize(
+                    nodes=graph_service.nodes,
+                    edges=graph_service.edges,
+                    base_summaries=graph_service.community_summaries,
+                    repository=self.retrieval_repository,
+                )
+                graph_service.community_summaries = community_result.summaries
+                graph_service.community_summaries.apply_to_nodes(graph_service.nodes)
+                community_reports_replayed = community_result.reports_replayed
+                community_reports_generated = community_result.reports_generated
             RagflowRetrievalSyncService(
                 ingestion_repository=self.ingestion_repository,
                 retrieval_repository=self.retrieval_repository,
-                graph_service=GraphService(merged_nodes, merged_edges),
+                graph_service=graph_service,
                 write_graph_artifacts=False,
                 mark_resolution_phase=False,
                 mark_community_phase=False,
@@ -148,6 +169,8 @@ class RagflowGraphBuildService:
             resolution_pairs_replayed=resolution_pairs_replayed,
             resolution_pairs_resolved=resolution_pairs_resolved,
             resolution_pairs_merged=resolution_pairs_merged,
+            community_reports_replayed=community_reports_replayed,
+            community_reports_generated=community_reports_generated,
         )
 
     def _source_ids(self, source_ids: list[str] | None) -> list[str]:

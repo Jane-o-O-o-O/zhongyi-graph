@@ -75,4 +75,6 @@ class GraphBuildResponse(BaseModel):
     resolution_pairs_replayed: int = 0
     resolution_pairs_resolved: int = 0
     resolution_pairs_merged: int = 0
+    community_reports_replayed: int = 0
+    community_reports_generated: int = 0
     graph_refreshed: bool

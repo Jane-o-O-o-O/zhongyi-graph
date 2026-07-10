@@ -97,6 +97,21 @@ class RecordingResolutionClient:
         return [("白芍", "白芍药")]
 
 
+class RecordingCommunityClient:
+    def __init__(self):
+        self.calls = []
+
+    def generate_community_report(self, *, community_id, entities, relations):
+        self.calls.append((community_id, entities, relations))
+        return {
+            "title": "白芍养血社区",
+            "summary": "围绕白芍和养血敛阴形成的功效社区。",
+            "findings": [],
+            "rating": 1.0,
+            "rating_explanation": "测试",
+        }
+
+
 def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monkeypatch):
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -153,6 +168,8 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     assert body["resolution_pairs_replayed"] == 0
     assert body["resolution_pairs_resolved"] == 0
     assert body["resolution_pairs_merged"] == 0
+    assert body["community_reports_replayed"] == 0
+    assert body["community_reports_generated"] == 0
     assert body["graph_refreshed"] is True
     assert retrieval_repository.has_graphrag_phase_marker(PHASE_RESOLUTION) is False
     assert retrieval_repository.has_graphrag_phase_marker(PHASE_COMMUNITY) is False
@@ -213,3 +230,58 @@ def test_graphrag_build_endpoint_uses_llm_resolution_client(monkeypatch):
     assert body["resolution_pairs_resolved"] == 1
     assert body["resolution_pairs_merged"] == 1
     assert resolution_client.calls == [("Herb", [("白芍", "白芍药")])]
+
+
+def test_graphrag_build_endpoint_uses_llm_community_report_client(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    ingestion_repository = IngestionRepository(engine)
+    retrieval_repository = RagflowRetrievalRepository(engine)
+    ingestion_repository.upsert_source(
+        SourceManifest(
+            source_id="doc:a",
+            filename="doc:a.txt",
+            mime_type="text/plain",
+            checksum="checksum:doc:a",
+            status="parsed",
+        )
+    )
+    ingestion_repository.replace_pages_and_chunks(
+        "doc:a",
+        [],
+        [
+            DocumentChunk(
+                chunk_id="chunk:doc:a:1",
+                source_id="doc:a",
+                page_id="page:doc:a:1",
+                chunk_index=0,
+                content="白芍可养血敛阴。",
+                content_type="text",
+                token_count=8,
+            )
+        ],
+    )
+    community_client = RecordingCommunityClient()
+    question_service = routes.QuestionService.demo()
+    monkeypatch.setattr(routes, "ingestion_repository", ingestion_repository)
+    monkeypatch.setattr(routes, "ragflow_repository", retrieval_repository)
+    monkeypatch.setattr(routes, "question_service", question_service)
+    monkeypatch.setattr(routes, "structured_extractor", community_client)
+    monkeypatch.setattr(routes, "GraphExtractor", lambda llm_extractor=None: FixedRouteExtractor())
+
+    response = TestClient(app).post(
+        "/api/retrieval/graphrag/build",
+        json={"source_ids": ["doc:a"], "with_resolution": False, "with_community": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["community_reports_generated"] == 1
+    reports = retrieval_repository.list_community_reports()
+    assert reports[0].title == "白芍养血社区"
+    assert community_client.calls
+    assert community_client.calls[0][1] == ["白芍", "养血敛阴"]

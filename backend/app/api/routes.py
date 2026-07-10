@@ -28,6 +28,7 @@ from app.services.question_service import QuestionService
 from app.services.graph_extractor import GraphExtractor
 from app.services.model_clients import StructuredExtractionClient
 from app.services.ragflow_compat.doc_store import RagflowDocStore, RagflowVectorSearchClient
+from app.services.ragflow_compat.community_reports import RagflowGraphCommunityReportService
 from app.services.ragflow_compat.entity_resolution import (
     LlmEntityResolutionDecider,
     RagflowGraphEntityResolutionService,
@@ -241,6 +242,9 @@ def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBui
         graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
         entity_resolution_service=RagflowGraphEntityResolutionService(
             decider=LlmEntityResolutionDecider(structured_extractor)
+        ),
+        community_report_service=RagflowGraphCommunityReportService(
+            report_client=structured_extractor
         ),
     ).build(
         request.source_ids,

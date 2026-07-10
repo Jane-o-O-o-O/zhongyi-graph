@@ -14,9 +14,12 @@ from app.models.ingestion import (
 )
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.checkpoints import (
+    COMMUNITY_CHECKPOINT,
     RESOLUTION_CHECKPOINT,
+    community_checkpoint_key,
     resolution_checkpoint_key,
 )
+from app.services.ragflow_compat.community_reports import RagflowGraphCommunityReportService
 from app.services.ragflow_compat.entity_resolution import RagflowGraphEntityResolutionService
 from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
@@ -198,6 +201,11 @@ class ExplodingResolutionDecider:
         raise AssertionError("resolution decider should not be called when checkpoint exists")
 
 
+class ExplodingCommunityReportClient:
+    def generate_community_report(self, *, community_id, entities, relations):
+        raise AssertionError("community report client should not be called when checkpoint exists")
+
+
 def test_build_generates_and_saves_subgraph_artifact_for_new_source():
     ingestion_repository, retrieval_repository = _repositories()
     source = _source("doc:a")
@@ -351,6 +359,43 @@ def test_build_syncs_retrieval_kg_index_from_global_graph():
     assert reports
     assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
     assert retrieval_repository.get_graph_artifact("graph:global") is not None
+
+
+def test_build_replays_community_report_checkpoint_into_retrieval_reports():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    checkpoint_key = community_checkpoint_key("0", "0", ["白芍", "养血敛阴"])
+    retrieval_repository.save_graphrag_checkpoint(
+        COMMUNITY_CHECKPOINT,
+        checkpoint_key,
+        {
+            "title": "白芍养血社区",
+            "summary": "白芍与养血敛阴构成一个功效主题社区。",
+            "findings": [
+                {"summary": "功效关联", "explanation": "白芍连接养血敛阴。"}
+            ],
+            "rating": 1.0,
+            "rating_explanation": "测试报告",
+        },
+    )
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=FixedExtractor(),
+        community_report_service=RagflowGraphCommunityReportService(
+            report_client=ExplodingCommunityReportClient()
+        ),
+    ).build(["doc:a"])
+
+    reports = retrieval_repository.list_community_reports()
+    assert summary.community_reports_replayed == 1
+    assert summary.community_reports_generated == 0
+    assert len(reports) == 1
+    assert reports[0].title == "白芍养血社区"
+    assert reports[0].summary == "白芍与养血敛阴构成一个功效主题社区。"
+    assert reports[0].entities_kwd == ["白芍", "养血敛阴"]
 
 
 def test_build_replays_resolution_checkpoint_and_merges_entities():

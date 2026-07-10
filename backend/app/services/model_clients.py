@@ -214,6 +214,32 @@ class StructuredExtractionClient:
         )
         return _selected_resolution_pairs(payload, pairs)
 
+    def generate_community_report(
+        self,
+        *,
+        community_id: int,
+        entities: Sequence[str],
+        relations: Sequence[str],
+    ) -> dict:
+        payload = self._chat_json(
+            system=(
+                "/no_think 你是中医知识图谱社区报告生成器。"
+                "根据一个图谱社区内的实体和关系，生成结构化社区报告，只输出 JSON。"
+                "报告必须解释该社区的医学主题、主要实体、关键关系和重要性。"
+                "输出格式：{\"title\":\"社区标题\",\"summary\":\"社区摘要\","
+                "\"findings\":[{\"summary\":\"发现\",\"explanation\":\"解释\"}],"
+                "\"rating\":1.0,\"rating_explanation\":\"评分解释\"}"
+            ),
+            user=(
+                f"/no_think 社区ID：{community_id}\n"
+                "实体："
+                + json.dumps(list(entities), ensure_ascii=False)
+                + "\n关系："
+                + json.dumps(list(relations), ensure_ascii=False)
+            ),
+        )
+        return _normalize_community_report_payload(payload)
+
     def _chat_json(self, *, system: str, user: str) -> dict:
         payload = {
             "model": self.model,
@@ -471,6 +497,24 @@ def _truthy_resolution_value(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"true", "yes", "y", "same", "1", "是", "同一"}
     return False
+
+
+def _normalize_community_report_payload(payload: dict) -> dict:
+    findings = payload.get("findings", [])
+    if not isinstance(findings, list):
+        findings = []
+    rating = payload.get("rating", 0.0)
+    try:
+        rating = float(rating)
+    except (TypeError, ValueError):
+        rating = 0.0
+    return {
+        "title": str(payload.get("title") or "社区报告"),
+        "summary": str(payload.get("summary") or payload.get("report") or ""),
+        "findings": [finding for finding in findings if isinstance(finding, (dict, str))],
+        "rating": rating,
+        "rating_explanation": str(payload.get("rating_explanation") or ""),
+    }
 
 
 def _focus_text_window(text: str, hints: Sequence[str], window: int = 700) -> str:
