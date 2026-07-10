@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import EntityCandidate, RelationCandidate
 from app.services.graph_extractor import GraphExtractor
+from app.services.graph_service import GraphService
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
+from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,13 @@ class RagflowGraphBuildService:
             )
             resolution_marker_cleared = True
             community_marker_cleared = True
+        if merged_nodes or merged_edges:
+            RagflowRetrievalSyncService(
+                ingestion_repository=self.ingestion_repository,
+                retrieval_repository=self.retrieval_repository,
+                graph_service=GraphService(merged_nodes, merged_edges),
+                write_graph_artifacts=False,
+            ).rebuild_from_ingestion()
         return RagflowGraphBuildSummary(
             sources_total=len(selected_source_ids),
             sources_skipped=skipped,

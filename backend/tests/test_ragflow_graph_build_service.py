@@ -236,3 +236,25 @@ def test_build_keeps_phase_markers_on_pure_resume():
     assert summary.community_marker_cleared is False
     assert retrieval_repository.has_graphrag_phase_marker(PHASE_RESOLUTION) is True
     assert retrieval_repository.has_graphrag_phase_marker(PHASE_COMMUNITY) is True
+
+
+def test_build_syncs_retrieval_kg_index_from_global_graph():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=FixedExtractor(),
+    ).build(["doc:a"])
+
+    entities = retrieval_repository.list_kg_entities()
+    relations = retrieval_repository.list_kg_relations()
+    reports = retrieval_repository.list_community_reports()
+    assert summary.global_nodes == 2
+    assert {entity.entity_name for entity in entities} == {"白芍", "养血敛阴"}
+    assert len(relations) == 1
+    assert reports
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
+    assert retrieval_repository.get_graph_artifact("graph:global") is not None
