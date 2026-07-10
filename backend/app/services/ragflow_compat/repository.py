@@ -727,6 +727,40 @@ class RagflowRetrievalRepository:
             if relation_id in relations
         ]
 
+    def find_kg_relation_by_entities(
+        self,
+        left_entity: str,
+        right_entity: str,
+    ) -> RetrievalKgRelation | None:
+        left_entity = left_entity.strip()
+        right_entity = right_entity.strip()
+        if not left_entity or not right_entity:
+            return None
+        statement = (
+            select(retrieval_kg_relations_table)
+            .where(
+                retrieval_kg_relations_table.c.available_int == 1,
+                or_(
+                    (
+                        (retrieval_kg_relations_table.c.from_entity_kwd == left_entity)
+                        & (retrieval_kg_relations_table.c.to_entity_kwd == right_entity)
+                    ),
+                    (
+                        (retrieval_kg_relations_table.c.from_entity_kwd == right_entity)
+                        & (retrieval_kg_relations_table.c.to_entity_kwd == left_entity)
+                    ),
+                ),
+            )
+            .order_by(
+                retrieval_kg_relations_table.c.weight_int.desc(),
+                retrieval_kg_relations_table.c.relation_id,
+            )
+            .limit(1)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            return RetrievalKgRelation(**dict(row._mapping)) if row else None
+
     def count_embedded_kg_entities(self) -> int:
         with self.engine.begin() as connection:
             return _count_where(

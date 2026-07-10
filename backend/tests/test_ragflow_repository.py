@@ -737,6 +737,37 @@ def test_repository_gets_kg_records_by_ids_and_counts_embedded_vectors():
     assert repository.count_embedded_kg_relations() == 1
 
 
+def test_repository_finds_available_relation_by_entity_pair_in_either_direction():
+    repository = _repository()
+    expected = RetrievalKgRelation(
+        relation_id="relation:心脾两虚:归脾汤",
+        from_entity_kwd="心脾两虚",
+        to_entity_kwd="归脾汤",
+        relation_type="RECOMMENDS_FORMULA",
+        display="推荐方剂",
+        content_with_weight="心脾两虚 推荐方剂 归脾汤",
+        weight_int=3,
+        evidence_chunk_ids=["chunk:1"],
+    )
+    repository.replace_kg_relations(
+        [
+            RetrievalKgRelation(
+                relation_id="relation:hidden",
+                from_entity_kwd="心脾两虚",
+                to_entity_kwd="归脾汤",
+                relation_type="RELATED_TO",
+                display="相关",
+                content_with_weight="隐藏关系",
+                weight_int=100,
+                available_int=0,
+            ),
+            expected,
+        ]
+    )
+
+    assert repository.find_kg_relation_by_entities("归脾汤", "心脾两虚") == expected
+
+
 def test_repository_readiness_reports_vector_coverage_chunk_buckets_and_blockers():
     repository = _repository()
     repository.replace_documents(

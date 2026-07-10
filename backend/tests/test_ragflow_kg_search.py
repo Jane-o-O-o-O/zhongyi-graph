@@ -145,6 +145,80 @@ def test_kg_search_combines_entity_type_relation_and_nhop_scores():
     assert result.graph_edges[0].target == "syndrome:心脾两虚"
 
 
+def test_kg_search_backfills_nhop_relation_details_from_repository():
+    repository = _repository_with_relation()
+
+    class NhopOnlyDocStore:
+        def __init__(self, repository):
+            self.repository = repository
+
+        def search_entities(self, query, keywords, **kwargs):
+            del query, keywords, kwargs
+            return [
+                EntitySearchHit(
+                    entity=RetrievalKgEntity(
+                        entity_id="entity:心脾两虚",
+                        entity_name="心脾两虚",
+                        entity_type="Syndrome",
+                        source_node_id="syndrome:心脾两虚",
+                        content_with_weight='{"description":"心脾两虚 Syndrome"}',
+                        description="心脾两虚 Syndrome",
+                        rank_flt=2.0,
+                        n_hop_with_weight=[
+                            {"path": ["心脾两虚", "归脾汤"], "weights": [4]}
+                        ],
+                        evidence_chunk_ids=["chunk:1"],
+                    ),
+                    score=1.0,
+                )
+            ]
+
+        def search_relations(self, query, **kwargs):
+            del query, kwargs
+            return []
+
+        def search_community_reports(self, entities, *, top_k=1):
+            del entities, top_k
+            return []
+
+    result = RagflowKgSearch(NhopOnlyDocStore(repository)).retrieve(
+        "心脾两虚",
+        answer_type_keywords=[],
+        entities_from_query=["心脾两虚"],
+    )
+
+    assert result.graph_edges[0].id == "edge:formula"
+    assert result.graph_edges[0].relation == "RECOMMENDS_FORMULA"
+    assert result.graph_edges[0].display == "推荐方剂"
+    assert result.graph_edges[0].evidence_ids == ["chunk:1"]
+
+
+def _repository_with_relation():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    repository = RagflowRetrievalRepository(engine)
+    repository.replace_kg_relations(
+        [
+            RetrievalKgRelation(
+                relation_id="relation:心脾两虚:归脾汤",
+                from_entity_kwd="心脾两虚",
+                to_entity_kwd="归脾汤",
+                relation_type="RECOMMENDS_FORMULA",
+                display="推荐方剂",
+                content_with_weight="心脾两虚 推荐方剂 归脾汤",
+                weight_int=4,
+                evidence_chunk_ids=["chunk:1"],
+                source_edge_id="edge:formula",
+            )
+        ]
+    )
+    return repository
+
+
 def test_kg_search_honors_community_report_topn():
     engine = create_engine(
         "sqlite+pysqlite://",

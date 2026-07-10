@@ -79,6 +79,7 @@ class RagflowKgSearch:
         nhop_paths = score_nhop_paths(ents)
         double_hit_boost(ents, type_names)
         fuse_relation_scores(rels, type_names, nhop_paths)
+        self._backfill_relation_details(rels)
         scored_entities = sort_entities(ents, top_n=ent_topn)
         scored_relations = sort_relations(rels, top_n=rel_topn)
         community_reports = [
@@ -109,6 +110,26 @@ class RagflowKgSearch:
             if entity.entity_type in type_set or entity.entity_name in type_set
         }
 
+    def _backfill_relation_details(
+        self,
+        relation_map: dict[tuple[str, str], dict],
+    ) -> None:
+        find_relation = getattr(
+            self.doc_store.repository,
+            "find_kg_relation_by_entities",
+            None,
+        )
+        if not callable(find_relation):
+            return
+        for edge, relation_data in relation_map.items():
+            if relation_data.get("relation"):
+                continue
+            relation = find_relation(edge[0], edge[1])
+            if not relation:
+                continue
+            relation_data["description"] = relation.content_with_weight
+            relation_data["relation"] = relation
+
     def _graph_nodes(
         self,
         scored_entities: list[ScoredEntity],
@@ -136,7 +157,10 @@ class RagflowKgSearch:
     ) -> list[GraphEdge]:
         edges: list[GraphEdge] = []
         for item in scored_relations:
-            relation_data = relation_map.get(tuple(sorted((item.from_entity, item.to_entity))), {})
+            relation_data = relation_map.get(
+                (item.from_entity, item.to_entity),
+                relation_map.get(tuple(sorted((item.from_entity, item.to_entity))), {}),
+            )
             relation = relation_data.get("relation")
             if relation:
                 relation_type = relation.relation_type
