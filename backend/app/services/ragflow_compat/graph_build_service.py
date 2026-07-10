@@ -71,6 +71,7 @@ class RagflowGraphBuildService:
         entity_resolution_service: RagflowGraphEntityResolutionService | None = None,
         community_report_service: RagflowGraphCommunityReportService | None = None,
         chunk_batch_size: int = 1000,
+        batch_chunk_token_size: int = 4096,
         retry_attempts: int = 2,
         retry_backoff_seconds: float = 2.0,
         retry_backoff_max_seconds: float = 60.0,
@@ -89,6 +90,7 @@ class RagflowGraphBuildService:
             community_report_service or RagflowGraphCommunityReportService()
         )
         self.chunk_batch_size = chunk_batch_size
+        self.batch_chunk_token_size = max(1, int(batch_chunk_token_size or 4096))
         self.retry_attempts = max(1, retry_attempts)
         self.retry_backoff_seconds = max(0.0, retry_backoff_seconds)
         self.retry_backoff_max_seconds = max(
@@ -248,6 +250,7 @@ class RagflowGraphBuildService:
             "source_ids": source_ids,
             "with_resolution": with_resolution,
             "with_community": with_community,
+            "batch_chunk_token_size": self.batch_chunk_token_size,
             "retry_attempts": self.retry_attempts,
             "retry_backoff_seconds": self.retry_backoff_seconds,
             "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
@@ -545,6 +548,7 @@ class RagflowGraphBuildService:
             "source_ids": selected_source_ids,
             "with_resolution": with_resolution,
             "with_community": with_community,
+            "batch_chunk_token_size": self.batch_chunk_token_size,
             "retry_attempts": self.retry_attempts,
             "retry_backoff_seconds": self.retry_backoff_seconds,
             "retry_backoff_max_seconds": self.retry_backoff_max_seconds,

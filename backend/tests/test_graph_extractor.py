@@ -226,6 +226,75 @@ def test_graph_extractor_general_method_uses_batch_extraction_units():
     )
 
 
+def test_graph_extractor_general_method_splits_batches_by_token_limit():
+    class FakeBatchExtractor:
+        def __init__(self):
+            self.batch_calls = []
+
+        def extract_chunks_batch(self, items):
+            self.batch_calls.append(items)
+            return {
+                "items": [
+                    {
+                        "unit_id": item["unit_id"],
+                        "entities": [
+                            {
+                                "name": f"实体{item['unit_id'].rsplit(':', 1)[-1]}",
+                                "label": "Syndrome",
+                                "confidence": 0.8,
+                            }
+                        ],
+                        "relations": [],
+                    }
+                    for item in items
+                ]
+            }
+
+    extractor = FakeBatchExtractor()
+    chunks = [
+        DocumentChunk(
+            chunk_id="chunk:batch:1",
+            source_id="source:batch",
+            page_id="page:batch:1",
+            chunk_index=1,
+            content="第一段辨证内容。",
+            token_count=280,
+        ),
+        DocumentChunk(
+            chunk_id="chunk:batch:2",
+            source_id="source:batch",
+            page_id="page:batch:1",
+            chunk_index=2,
+            content="第二段辨证内容。",
+            token_count=260,
+        ),
+        DocumentChunk(
+            chunk_id="chunk:batch:3",
+            source_id="source:batch",
+            page_id="page:batch:1",
+            chunk_index=3,
+            content="第三段辨证内容。",
+            token_count=240,
+        ),
+    ]
+
+    entities, relations = GraphExtractor(
+        llm_extractor=extractor,
+        method="general",
+        batch_token_limit=600,
+    ).extract(chunks)
+
+    assert extractor.batch_calls == [
+        [
+            {"unit_id": "chunk:batch:1", "text": "第一段辨证内容。"},
+            {"unit_id": "chunk:batch:2", "text": "第二段辨证内容。"},
+        ],
+        [{"unit_id": "chunk:batch:3", "text": "第三段辨证内容。"}],
+    ]
+    assert {entity.name for entity in entities} == {"实体1", "实体2", "实体3"}
+    assert relations == []
+
+
 def test_graph_extractor_normalizes_llm_symptom_aliases_after_extraction():
     class FakeLlmExtractor:
         def extract_chunk(self, text, hints=None):

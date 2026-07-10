@@ -76,6 +76,21 @@ class RecordingMethodRouteExtractor(FixedRouteExtractor):
         self.methods.append(method)
 
 
+class RecordingBatchRouteExtractor(FixedRouteExtractor):
+    configs = []
+
+    def __init__(self, llm_extractor=None, method="light", batch_token_limit=4096):
+        self.llm_extractor = llm_extractor
+        self.method = method
+        self.batch_token_limit = batch_token_limit
+        self.configs.append(
+            {
+                "method": method,
+                "batch_token_limit": batch_token_limit,
+            }
+        )
+
+
 class AliasRouteExtractor:
     def extract(self, chunks, hint_terms=None):
         return [
@@ -284,6 +299,68 @@ def test_graphrag_build_endpoint_passes_extractor_method_to_factory(monkeypatch)
     assert RecordingMethodRouteExtractor.methods == ["ner"]
     assert run is not None
     assert run.metadata["method"] == "ner"
+
+
+def test_graphrag_build_endpoint_passes_batch_token_size_to_general_extractor(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    ingestion_repository = IngestionRepository(engine)
+    retrieval_repository = RagflowRetrievalRepository(engine)
+    ingestion_repository.upsert_source(
+        SourceManifest(
+            source_id="doc:a",
+            filename="doc:a.txt",
+            mime_type="text/plain",
+            checksum="checksum:doc:a",
+            status="parsed",
+        )
+    )
+    ingestion_repository.replace_pages_and_chunks(
+        "doc:a",
+        [],
+        [
+            DocumentChunk(
+                chunk_id="chunk:doc:a:1",
+                source_id="doc:a",
+                page_id="page:doc:a:1",
+                chunk_index=0,
+                content="白芍可养血敛阴。",
+                content_type="text",
+                token_count=8,
+            )
+        ],
+    )
+    RecordingBatchRouteExtractor.configs = []
+    question_service = routes.QuestionService.demo()
+    monkeypatch.setattr(routes, "ingestion_repository", ingestion_repository)
+    monkeypatch.setattr(routes, "ragflow_repository", retrieval_repository)
+    monkeypatch.setattr(routes, "question_service", question_service)
+    monkeypatch.setattr(routes, "GraphExtractor", RecordingBatchRouteExtractor)
+
+    response = TestClient(app).post(
+        "/api/retrieval/graphrag/build",
+        json={
+            "source_ids": ["doc:a"],
+            "method": "general",
+            "batch_chunk_token_size": 1024,
+            "with_resolution": False,
+            "with_community": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    run = retrieval_repository.get_graphrag_build_run(body["run_id"])
+    assert RecordingBatchRouteExtractor.configs == [
+        {"method": "general", "batch_token_limit": 1024}
+    ]
+    assert run is not None
+    assert run.metadata["method"] == "general"
+    assert run.metadata["batch_chunk_token_size"] == 1024
 
 
 def test_graphrag_build_async_endpoint_submits_background_run(monkeypatch):

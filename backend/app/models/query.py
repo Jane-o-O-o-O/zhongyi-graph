@@ -42,6 +42,7 @@ class GraphBuildRequest(BaseModel):
     method: Literal["light", "general", "ner"] = "light"
     with_resolution: bool = True
     with_community: bool = True
+    batch_chunk_token_size: int = Field(default=4096, ge=512, le=8196)
     retry_attempts: int = Field(default=2, ge=1, le=10)
     retry_backoff_seconds: float = Field(default=2.0, ge=0.0, le=300.0)
     retry_backoff_max_seconds: float = Field(default=60.0, ge=0.0, le=3600.0)

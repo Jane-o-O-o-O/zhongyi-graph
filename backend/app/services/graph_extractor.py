@@ -2,11 +2,19 @@ from typing import Any
 
 from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate
 
+DEFAULT_GENERAL_BATCH_TOKEN_LIMIT = 4096
+
 
 class GraphExtractor:
-    def __init__(self, llm_extractor=None, method: str = "light"):
+    def __init__(
+        self,
+        llm_extractor=None,
+        method: str = "light",
+        batch_token_limit: int = DEFAULT_GENERAL_BATCH_TOKEN_LIMIT,
+    ):
         self.llm_extractor = llm_extractor
         self.method = _normalize_method(method)
+        self.batch_token_limit = max(1, int(batch_token_limit or DEFAULT_GENERAL_BATCH_TOKEN_LIMIT))
 
     def extract(
         self,
@@ -27,27 +35,24 @@ class GraphExtractor:
     ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
         if not hasattr(self.llm_extractor, "extract_chunks_batch"):
             return self._extract_with_llm(chunks, hint_terms=[])
-        items = [
-            {"unit_id": chunk.chunk_id, "text": chunk.content}
-            for chunk in chunks
-            if chunk.content.strip()
-        ]
-        if not items:
-            return [], []
-        try:
-            payload = self.llm_extractor.extract_chunks_batch(items)
-        except Exception:
+        batches = _general_extraction_batches(chunks, self.batch_token_limit)
+        if not batches:
             return [], []
         chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
         entities: dict[str, EntityCandidate] = {}
         relations: dict[str, RelationCandidate] = {}
-        for item in payload.get("items", []):
-            if not isinstance(item, dict):
-                continue
-            chunk = chunks_by_id.get(str(item.get("unit_id", "")).strip())
-            if not chunk:
-                continue
-            _merge_extracted_payload(entities, relations, chunk, item)
+        try:
+            for batch in batches:
+                payload = self.llm_extractor.extract_chunks_batch(batch)
+                for item in payload.get("items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    chunk = chunks_by_id.get(str(item.get("unit_id", "")).strip())
+                    if not chunk:
+                        continue
+                    _merge_extracted_payload(entities, relations, chunk, item)
+        except Exception:
+            return [], []
         return list(entities.values()), list(relations.values())
 
     def _extract_with_ner(
@@ -116,6 +121,35 @@ def _entity_id(label: str, name: str) -> str:
         "Herb": "herb",
     }.get(label, label.lower())
     return f"entity:{label_prefix}:{name}"
+
+
+def _general_extraction_batches(
+    chunks: list[DocumentChunk],
+    token_limit: int,
+) -> list[list[dict[str, str]]]:
+    batches: list[list[dict[str, str]]] = []
+    current_batch: list[dict[str, str]] = []
+    current_tokens = 0
+    for chunk in chunks:
+        content = chunk.content.strip()
+        if not content:
+            continue
+        chunk_tokens = _chunk_token_count(chunk)
+        if current_batch and current_tokens + chunk_tokens > token_limit:
+            batches.append(current_batch)
+            current_batch = []
+            current_tokens = 0
+        current_batch.append({"unit_id": chunk.chunk_id, "text": content})
+        current_tokens += chunk_tokens
+    if current_batch:
+        batches.append(current_batch)
+    return batches
+
+
+def _chunk_token_count(chunk: DocumentChunk) -> int:
+    if chunk.token_count > 0:
+        return chunk.token_count
+    return max(1, len(chunk.content.strip()))
 
 
 def _merge_extracted_payload(

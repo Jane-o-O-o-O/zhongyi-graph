@@ -281,7 +281,10 @@ def _graphrag_build_service(request: GraphBuildRequest) -> RagflowGraphBuildServ
     return RagflowGraphBuildService(
         ingestion_repository=ingestion_repository,
         retrieval_repository=ragflow_repository,
-        graph_extractor=_graph_extractor_for_method(request.method),
+        graph_extractor=_graph_extractor_for_method(
+            request.method,
+            request.batch_chunk_token_size,
+        ),
         entity_resolution_service=RagflowGraphEntityResolutionService(
             decider=LlmEntityResolutionDecider(structured_extractor)
         ),
@@ -292,15 +295,23 @@ def _graphrag_build_service(request: GraphBuildRequest) -> RagflowGraphBuildServ
         retry_backoff_seconds=request.retry_backoff_seconds,
         retry_backoff_max_seconds=request.retry_backoff_max_seconds,
         source_timeout_seconds=request.source_timeout_seconds,
+        batch_chunk_token_size=request.batch_chunk_token_size,
         method=request.method,
     )
 
 
-def _graph_extractor_for_method(method: str):
+def _graph_extractor_for_method(method: str, batch_chunk_token_size: int = 4096):
     try:
-        return GraphExtractor(llm_extractor=structured_extractor, method=method)
+        return GraphExtractor(
+            llm_extractor=structured_extractor,
+            method=method,
+            batch_token_limit=batch_chunk_token_size,
+        )
     except TypeError:
-        return GraphExtractor(llm_extractor=structured_extractor)
+        try:
+            return GraphExtractor(llm_extractor=structured_extractor, method=method)
+        except TypeError:
+            return GraphExtractor(llm_extractor=structured_extractor)
 
 
 def _run_ragflow_graphrag_background(service, submission) -> None:
