@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
+from app.models.graph import GraphEdge, GraphNode
+from app.models.ingestion import EntityCandidate, RelationCandidate
 from app.services.graph_extractor import GraphExtractor
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
+from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
 
 
 @dataclass(frozen=True)
@@ -38,20 +42,91 @@ class RagflowGraphBuildService:
     def build(self, source_ids: list[str] | None = None) -> RagflowGraphBuildSummary:
         selected_source_ids = self._source_ids(source_ids)
         skipped = 0
+        built = 0
         failed = 0
         for source_id in selected_source_ids:
             if self.retrieval_repository.get_subgraph_artifact(source_id):
                 skipped += 1
                 continue
-            failed += 1
+            chunks = self.ingestion_repository.list_chunks(source_id)
+            if not chunks:
+                failed += 1
+                continue
+            entities, relations = self.graph_extractor.extract(chunks)
+            nodes, edges = _graph_from_candidates(source_id, entities, relations)
+            if not nodes:
+                failed += 1
+                continue
+            self.retrieval_repository.save_graph_artifact(_subgraph_artifact(source_id, nodes, edges))
+            built += 1
         return RagflowGraphBuildSummary(
             sources_total=len(selected_source_ids),
             sources_skipped=skipped,
-            sources_built=0,
+            sources_built=built,
             sources_failed=failed,
+            graph_changed=built > 0,
         )
 
     def _source_ids(self, source_ids: list[str] | None) -> list[str]:
         if source_ids is not None:
             return list(dict.fromkeys(source_ids))
         return [source.source_id for source in self.ingestion_repository.list_sources()]
+
+
+def _graph_from_candidates(
+    source_id: str,
+    entities: list[EntityCandidate],
+    relations: list[RelationCandidate],
+) -> tuple[list[GraphNode], list[GraphEdge]]:
+    nodes_by_id = {
+        entity.entity_id: GraphNode(
+            id=entity.entity_id,
+            label=entity.label,
+            name=entity.name,
+            description=f"{entity.name} {entity.label}",
+            properties={
+                "source_id": source_id,
+                "source_chunk_ids": entity.source_chunk_ids,
+                "confidence": entity.confidence,
+            },
+        )
+        for entity in entities
+    }
+    edges: list[GraphEdge] = []
+    for relation in relations:
+        if relation.source_entity_id not in nodes_by_id or relation.target_entity_id not in nodes_by_id:
+            continue
+        edges.append(
+            GraphEdge(
+                id=relation.relation_id,
+                source=relation.source_entity_id,
+                target=relation.target_entity_id,
+                relation=relation.relation,
+                display=relation.display,
+                evidence_ids=relation.evidence_chunk_ids,
+            )
+        )
+    return list(nodes_by_id.values()), edges
+
+
+def _subgraph_artifact(
+    source_id: str,
+    nodes: list[GraphNode],
+    edges: list[GraphEdge],
+) -> RetrievalGraphArtifact:
+    return RetrievalGraphArtifact(
+        artifact_id=f"subgraph:{source_id}",
+        artifact_type="subgraph",
+        content_with_weight=json.dumps(_graph_payload(nodes, edges), ensure_ascii=False),
+        source_id=[source_id],
+        node_count=len(nodes),
+        edge_count=len(edges),
+        metadata={"scope": "source", "built_from": "graph_extractor"},
+    )
+
+
+def _graph_payload(nodes: list[GraphNode], edges: list[GraphEdge]) -> dict:
+    return {
+        "nodes": [node.model_dump() for node in nodes],
+        "edges": [edge.model_dump() for edge in edges],
+    }

@@ -6,7 +6,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.models.graph import GraphNode
-from app.models.ingestion import DocumentChunk, SourceManifest
+from app.models.ingestion import (
+    DocumentChunk,
+    EntityCandidate,
+    RelationCandidate,
+    SourceManifest,
+)
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
@@ -95,3 +100,66 @@ def test_build_skips_source_when_subgraph_checkpoint_exists():
     assert summary.sources_skipped == 1
     assert summary.sources_built == 0
     assert summary.sources_failed == 0
+
+
+class FixedExtractor:
+    def __init__(self):
+        self.calls = 0
+
+    def extract(self, chunks, hint_terms=None):
+        self.calls += 1
+        return [
+            EntityCandidate(
+                entity_id="entity:herb:白芍",
+                name="白芍",
+                label="Herb",
+                normalized_name="白芍",
+                source_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.9,
+            ),
+            EntityCandidate(
+                entity_id="entity:function:养血敛阴",
+                name="养血敛阴",
+                label="Function",
+                normalized_name="养血敛阴",
+                source_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.8,
+            ),
+        ], [
+            RelationCandidate(
+                relation_id="relation:白芍:HAS_FUNCTION:养血敛阴",
+                source_entity_id="entity:herb:白芍",
+                target_entity_id="entity:function:养血敛阴",
+                relation="HAS_FUNCTION",
+                display="功效",
+                evidence_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.8,
+            )
+        ]
+
+
+def test_build_generates_and_saves_subgraph_artifact_for_new_source():
+    ingestion_repository, retrieval_repository = _repositories()
+    source = _source("doc:a")
+    ingestion_repository.upsert_source(source)
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    extractor = FixedExtractor()
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=extractor,
+    ).build(["doc:a"])
+
+    artifact = retrieval_repository.get_subgraph_artifact("doc:a")
+    assert extractor.calls == 1
+    assert summary.sources_total == 1
+    assert summary.sources_built == 1
+    assert summary.sources_failed == 0
+    assert artifact is not None
+    assert artifact.artifact_id == "subgraph:doc:a"
+    assert artifact.node_count == 2
+    assert artifact.edge_count == 1
+    payload = json.loads(artifact.content_with_weight)
+    assert {node["name"] for node in payload["nodes"]} == {"白芍", "养血敛阴"}
+    assert payload["edges"][0]["relation"] == "HAS_FUNCTION"
