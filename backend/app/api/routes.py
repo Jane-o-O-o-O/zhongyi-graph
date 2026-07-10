@@ -183,6 +183,10 @@ def query(request: QueryRequest) -> QueryResponse:
         request.question,
         comm_topn=request.comm_topn,
         max_token=request.max_token,
+        ent_topn=request.ent_topn,
+        rel_topn=request.rel_topn,
+        ent_sim_threshold=request.ent_sim_threshold,
+        rel_sim_threshold=request.rel_sim_threshold,
     )
 
 

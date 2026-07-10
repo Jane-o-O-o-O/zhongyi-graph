@@ -9,6 +9,10 @@ class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
     comm_topn: int = Field(default=1, ge=0)
     max_token: int = Field(default=8196, ge=1)
+    ent_topn: int = Field(default=6, ge=1, le=100)
+    rel_topn: int = Field(default=6, ge=1, le=100)
+    ent_sim_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
+    rel_sim_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
 
     @field_validator("question", mode="before")
     @classmethod

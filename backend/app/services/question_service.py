@@ -142,12 +142,20 @@ class QuestionService:
         *,
         comm_topn: int = 1,
         max_token: int = 8196,
+        ent_topn: int = 6,
+        rel_topn: int = 6,
+        ent_sim_threshold: float = 0.0,
+        rel_sim_threshold: float = 0.0,
     ) -> QueryResponse:
         if self.retrieval_engine == "ragflow_compat" and self.ragflow_retrieval_service:
             return self.ragflow_retrieval_service.answer(
                 question,
                 comm_topn=comm_topn,
                 max_token=max_token,
+                ent_topn=ent_topn,
+                rel_topn=rel_topn,
+                ent_sim_threshold=ent_sim_threshold,
+                rel_sim_threshold=rel_sim_threshold,
             )
         terms = self._extract_terms(question)
         retrieval = self.hybrid_retriever.retrieve(question=question, terms=terms, top_k=8)

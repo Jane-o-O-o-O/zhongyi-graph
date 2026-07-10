@@ -39,6 +39,10 @@ class RagflowCompatibleRetrievalService:
         *,
         comm_topn: int = 1,
         max_token: int = 8196,
+        ent_topn: int = 6,
+        rel_topn: int = 6,
+        ent_sim_threshold: float = 0.0,
+        rel_sim_threshold: float = 0.0,
     ) -> QueryResponse:
         fulltext = self.fulltext_retriever.retrieve(question, top_k=8)
         fallback_answer_types = _infer_answer_types(question)
@@ -56,6 +60,10 @@ class RagflowCompatibleRetrievalService:
             answer_type_keywords=answer_type_keywords,
             entities_from_query=entities_from_query,
             comm_topn=comm_topn,
+            ent_topn=ent_topn,
+            rel_topn=rel_topn,
+            ent_sim_threshold=ent_sim_threshold,
+            rel_sim_threshold=rel_sim_threshold,
         )
         evidence = assemble_evidence_cards(fulltext.hits, kg.graph_edges)
         kg_context = _build_kg_context(kg, max_token=max_token)
@@ -71,6 +79,11 @@ class RagflowCompatibleRetrievalService:
             kg=kg,
             kg_context=kg_context,
             max_token=max_token,
+            ent_topn=ent_topn,
+            rel_topn=rel_topn,
+            comm_topn=comm_topn,
+            ent_sim_threshold=ent_sim_threshold,
+            rel_sim_threshold=rel_sim_threshold,
         )
         kg_evidence = [kg_context] if kg_context else []
         entities = _unique([entity.entity for entity in kg.entities] + entities_from_query)
@@ -239,6 +252,11 @@ def _retrieval_trace(
     kg,
     kg_context: str,
     max_token: int,
+    ent_topn: int,
+    rel_topn: int,
+    comm_topn: int,
+    ent_sim_threshold: float,
+    rel_sim_threshold: float,
 ) -> dict:
     return {
         "question": question,
@@ -255,6 +273,13 @@ def _retrieval_trace(
             "hits": [_trace_chunk_hit(hit) for hit in fulltext.hits],
         },
         "kg": {
+            "parameters": {
+                "ent_topn": ent_topn,
+                "rel_topn": rel_topn,
+                "comm_topn": comm_topn,
+                "ent_sim_threshold": ent_sim_threshold,
+                "rel_sim_threshold": rel_sim_threshold,
+            },
             "entities": [_trace_entity(entity) for entity in kg.entities],
             "relations": [_trace_relation(relation) for relation in kg.relations],
             "community_reports": [

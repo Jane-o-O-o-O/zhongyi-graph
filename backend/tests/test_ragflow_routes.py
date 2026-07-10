@@ -23,20 +23,46 @@ def test_question_service_delegates_to_ragflow_service_when_configured():
     captured = {}
 
     class FakeRagflowService:
-        def answer(self, question, *, comm_topn=1, max_token=8196):
+        def answer(
+            self,
+            question,
+            *,
+            comm_topn=1,
+            max_token=8196,
+            ent_topn=6,
+            rel_topn=6,
+            ent_sim_threshold=0.0,
+            rel_sim_threshold=0.0,
+        ):
             captured["question"] = question
             captured["comm_topn"] = comm_topn
             captured["max_token"] = max_token
+            captured["ent_topn"] = ent_topn
+            captured["rel_topn"] = rel_topn
+            captured["ent_sim_threshold"] = ent_sim_threshold
+            captured["rel_sim_threshold"] = rel_sim_threshold
             return "ragflow-response"
 
     service = routes.QuestionService.demo()
     service.retrieval_engine = "ragflow_compat"
     service.ragflow_retrieval_service = FakeRagflowService()
 
-    assert service.answer("失眠怎么辨证？", comm_topn=2, max_token=128) == "ragflow-response"
+    assert service.answer(
+        "失眠怎么辨证？",
+        comm_topn=2,
+        max_token=128,
+        ent_topn=8,
+        rel_topn=9,
+        ent_sim_threshold=0.25,
+        rel_sim_threshold=0.35,
+    ) == "ragflow-response"
     assert captured["question"] == "失眠怎么辨证？"
     assert captured["comm_topn"] == 2
     assert captured["max_token"] == 128
+    assert captured["ent_topn"] == 8
+    assert captured["rel_topn"] == 9
+    assert captured["ent_sim_threshold"] == 0.25
+    assert captured["rel_sim_threshold"] == 0.35
 
 
 class FixedRouteExtractor:

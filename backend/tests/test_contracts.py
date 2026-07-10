@@ -120,6 +120,21 @@ def test_query_request_accepts_graphrag_context_token_budget():
     assert request.max_token == 128
 
 
+def test_query_request_accepts_kg_retrieval_tuning_parameters():
+    request = QueryRequest(
+        question="失眠怎么辨证？",
+        ent_topn=8,
+        rel_topn=9,
+        ent_sim_threshold=0.25,
+        rel_sim_threshold=0.35,
+    )
+
+    assert request.ent_topn == 8
+    assert request.rel_topn == 9
+    assert request.ent_sim_threshold == 0.25
+    assert request.rel_sim_threshold == 0.35
+
+
 def test_query_request_rejects_blank_question_after_trim():
     with pytest.raises(ValidationError):
         QueryRequest(question="   ")

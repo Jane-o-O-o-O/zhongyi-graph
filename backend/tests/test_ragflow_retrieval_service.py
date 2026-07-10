@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
+from types import SimpleNamespace
 
 from app.services.llm import LlmClient
 from app.services.model_clients import EmbeddingClient, RerankClient
@@ -346,6 +347,89 @@ def test_ragflow_compatible_retrieval_service_uses_query_rewrite_with_type_pool(
     assert response.diagnostics["answer_type_keywords"] == ["Formula"]
     assert response.diagnostics["entities_from_query"] == ["归脾汤"]
     assert "归脾汤" in response.entities
+
+
+def test_ragflow_compatible_retrieval_service_passes_kg_tuning_parameters_to_search():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    repository = RagflowRetrievalRepository(engine)
+
+    class FakeFulltextRetriever:
+        def retrieve(self, question, *, top_k):
+            return SimpleNamespace(keywords=["失眠"], hits=[])
+
+    class FakeKgSearch:
+        def __init__(self):
+            self.calls = []
+
+        def retrieve(self, question, **kwargs):
+            self.calls.append((question, kwargs))
+            return SimpleNamespace(
+                entities=[
+                    SimpleNamespace(
+                        entity="失眠",
+                        score=0.91,
+                        description='{"description":"失眠 Symptom"}',
+                    )
+                ],
+                relations=[
+                    SimpleNamespace(
+                        from_entity="失眠",
+                        to_entity="心脾两虚",
+                        score=0.72,
+                        description="失眠 可辨为 心脾两虚",
+                    )
+                ],
+                community_reports=[],
+                graph_nodes=[],
+                graph_edges=[],
+            )
+
+    class FakeLlmClient:
+        def synthesize(self, question, entities, evidence, graph_paths):
+            return "answer"
+
+    kg_search = FakeKgSearch()
+    service = RagflowCompatibleRetrievalService(
+        repository=repository,
+        fulltext_retriever=FakeFulltextRetriever(),
+        kg_search=kg_search,
+        llm_client=FakeLlmClient(),
+    )
+
+    response = service.answer(
+        "失眠怎么辨证？",
+        ent_topn=8,
+        rel_topn=9,
+        ent_sim_threshold=0.25,
+        rel_sim_threshold=0.35,
+    )
+
+    assert kg_search.calls == [
+        (
+            "失眠怎么辨证？",
+            {
+                "answer_type_keywords": ["Syndrome"],
+                "entities_from_query": ["失眠"],
+                "comm_topn": 1,
+                "ent_topn": 8,
+                "rel_topn": 9,
+                "ent_sim_threshold": 0.25,
+                "rel_sim_threshold": 0.35,
+            },
+        )
+    ]
+    assert response.diagnostics["retrieval_trace"]["kg"]["parameters"] == {
+        "ent_topn": 8,
+        "rel_topn": 9,
+        "comm_topn": 1,
+        "ent_sim_threshold": 0.25,
+        "rel_sim_threshold": 0.35,
+    }
 
 
 def test_ragflow_compatible_retrieval_status_includes_readiness_report():
