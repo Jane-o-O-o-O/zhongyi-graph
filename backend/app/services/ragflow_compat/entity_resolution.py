@@ -11,6 +11,8 @@ from app.services.ragflow_compat.checkpoints import (
 )
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 
+RESOLUTION_BATCH_SIZE = 100
+
 
 @dataclass(frozen=True)
 class RagflowGraphEntityResolutionResult:
@@ -82,23 +84,24 @@ class RagflowGraphEntityResolutionService:
             pairs = _candidate_pairs(group_nodes)
             if not pairs:
                 continue
-            checkpoint_key = resolution_checkpoint_key(entity_type, pairs)
-            checkpoint = checkpoints.get(checkpoint_key)
             nodes_by_name = {node.name: node for node in group_nodes}
-            if isinstance(checkpoint, list):
-                replayed_pairs = _valid_pairs_from_payload(checkpoint, nodes_by_name)
-                selected_pairs.extend(replayed_pairs)
-                pairs_replayed += len(replayed_pairs)
-                continue
-            resolved_pairs = self.decider.resolve_pairs(entity_type, pairs, nodes_by_name)
-            resolved_pairs = _valid_pairs_from_payload(resolved_pairs, nodes_by_name)
-            repository.save_graphrag_checkpoint(
-                RESOLUTION_CHECKPOINT,
-                checkpoint_key,
-                [list(pair) for pair in resolved_pairs],
-            )
-            selected_pairs.extend(resolved_pairs)
-            pairs_resolved += len(resolved_pairs)
+            for batch in _pair_batches(pairs, RESOLUTION_BATCH_SIZE):
+                checkpoint_key = resolution_checkpoint_key(entity_type, batch)
+                checkpoint = checkpoints.get(checkpoint_key)
+                if isinstance(checkpoint, list):
+                    replayed_pairs = _valid_pairs_from_payload(checkpoint, nodes_by_name)
+                    selected_pairs.extend(replayed_pairs)
+                    pairs_replayed += len(replayed_pairs)
+                    continue
+                resolved_pairs = self.decider.resolve_pairs(entity_type, batch, nodes_by_name)
+                resolved_pairs = _valid_pairs_from_payload(resolved_pairs, nodes_by_name)
+                repository.save_graphrag_checkpoint(
+                    RESOLUTION_CHECKPOINT,
+                    checkpoint_key,
+                    [list(pair) for pair in resolved_pairs],
+                )
+                selected_pairs.extend(resolved_pairs)
+                pairs_resolved += len(resolved_pairs)
         resolved_nodes, resolved_edges, pairs_merged = _merge_pairs(nodes, edges, selected_pairs)
         if selected_pairs:
             repository.cleanup_graphrag_checkpoints(RESOLUTION_CHECKPOINT)
@@ -130,15 +133,56 @@ def _candidate_pairs(nodes: list[GraphNode]) -> list[tuple[str, str]]:
     return pairs
 
 
+def _pair_batches(pairs: list[tuple[str, str]], batch_size: int) -> list[list[tuple[str, str]]]:
+    return [
+        pairs[index:index + batch_size]
+        for index in range(0, len(pairs), batch_size)
+    ]
+
+
 def _is_candidate_name_pair(left: str, right: str) -> bool:
     if not left or not right or left == right:
         return False
+    if _has_digit_in_2gram_diff(left, right):
+        return False
+    if _is_ascii_text(left) and _is_ascii_text(right):
+        return _levenshtein_distance(left, right) <= min(len(left), len(right)) // 2
     left_chars = set(left)
     right_chars = set(right)
     max_length = max(len(left_chars), len(right_chars))
     if max_length < 4:
         return len(left_chars & right_chars) > 1
     return len(left_chars & right_chars) / max_length >= 0.8
+
+
+def _has_digit_in_2gram_diff(left: str, right: str) -> bool:
+    def to_2gram_set(value: str) -> set[str]:
+        return {value[index:index + 2] for index in range(len(value) - 1)}
+
+    diff = to_2gram_set(left) ^ to_2gram_set(right)
+    return any(any(char.isdigit() for char in value) for value in diff)
+
+
+def _is_ascii_text(value: str) -> bool:
+    return value.isascii() and any(char.isalpha() for char in value)
+
+
+def _levenshtein_distance(left: str, right: str) -> int:
+    if len(left) < len(right):
+        left, right = right, left
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        for right_index, right_char in enumerate(right, start=1):
+            current.append(
+                min(
+                    previous[right_index] + 1,
+                    current[right_index - 1] + 1,
+                    previous[right_index - 1] + (left_char != right_char),
+                )
+            )
+        previous = current
+    return previous[-1]
 
 
 def _is_likely_same_entity(left: str, right: str) -> bool:
