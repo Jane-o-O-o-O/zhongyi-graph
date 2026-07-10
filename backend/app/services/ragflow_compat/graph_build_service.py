@@ -57,6 +57,7 @@ class RagflowGraphBuildService:
         entity_resolution_service: RagflowGraphEntityResolutionService | None = None,
         community_report_service: RagflowGraphCommunityReportService | None = None,
         chunk_batch_size: int = 1000,
+        retry_attempts: int = 2,
     ):
         self.ingestion_repository = ingestion_repository
         self.retrieval_repository = retrieval_repository
@@ -68,6 +69,7 @@ class RagflowGraphBuildService:
             community_report_service or RagflowGraphCommunityReportService()
         )
         self.chunk_batch_size = chunk_batch_size
+        self.retry_attempts = max(1, retry_attempts)
 
     def build(
         self,
@@ -167,7 +169,7 @@ class RagflowGraphBuildService:
                 failed += 1
                 continue
             try:
-                entities, relations = self.graph_extractor.extract(chunks)
+                entities, relations = self._extract_source_graph(chunks)
                 nodes, edges = _graph_from_candidates(source_id, entities, relations)
                 if not nodes:
                     failed += 1
@@ -261,6 +263,20 @@ class RagflowGraphBuildService:
             community_reports_replayed=community_reports_replayed,
             community_reports_generated=community_reports_generated,
         )
+
+    def _extract_source_graph(
+        self,
+        chunks,
+    ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        last_error = None
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                return self.graph_extractor.extract(chunks)
+            except Exception as exc:
+                last_error = exc
+                if attempt >= self.retry_attempts:
+                    raise
+        raise last_error or RuntimeError("GraphRAG source extraction failed")
 
     def _source_ids(self, source_ids: list[str] | None) -> list[str]:
         if source_ids is not None:

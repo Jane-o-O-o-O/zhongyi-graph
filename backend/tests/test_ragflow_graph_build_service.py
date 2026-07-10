@@ -147,6 +147,17 @@ class FixedExtractor:
         ]
 
 
+class FlakyExtractor:
+    def __init__(self):
+        self.calls = 0
+
+    def extract(self, chunks, hint_terms=None):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("transient extractor failure")
+        return FixedExtractor().extract(chunks, hint_terms=hint_terms)
+
+
 class AliasPairExtractor:
     def extract(self, chunks, hint_terms=None):
         return [
@@ -231,6 +242,25 @@ def test_build_generates_and_saves_subgraph_artifact_for_new_source():
     payload = json.loads(artifact.content_with_weight)
     assert {node["name"] for node in payload["nodes"]} == {"白芍", "养血敛阴"}
     assert payload["edges"][0]["relation"] == "HAS_FUNCTION"
+
+
+def test_build_retries_transient_source_extraction_failure():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    extractor = FlakyExtractor()
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=extractor,
+        retry_attempts=2,
+    ).build(["doc:a"], with_resolution=False, with_community=False)
+
+    assert extractor.calls == 2
+    assert summary.sources_built == 1
+    assert summary.sources_failed == 0
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
 
 
 def test_build_merges_available_subgraphs_into_global_graph_artifact():
