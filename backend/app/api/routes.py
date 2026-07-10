@@ -178,7 +178,7 @@ def health() -> dict:
 
 @router.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest) -> QueryResponse:
-    return question_service.answer(request.question)
+    return question_service.answer(request.question, comm_topn=request.comm_topn)
 
 
 @router.get("/graph/overview", response_model=GraphOverviewResponse)

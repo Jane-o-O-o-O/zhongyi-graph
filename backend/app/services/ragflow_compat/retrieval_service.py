@@ -27,7 +27,7 @@ class RagflowCompatibleRetrievalService:
         self.llm_client = llm_client
         self.qdrant_stats_provider = qdrant_stats_provider
 
-    def answer(self, question: str) -> QueryResponse:
+    def answer(self, question: str, *, comm_topn: int = 1) -> QueryResponse:
         fulltext = self.fulltext_retriever.retrieve(question, top_k=8)
         answer_type_keywords = _infer_answer_types(question)
         entities_from_query = _entities_from_keywords(fulltext.keywords)
@@ -35,6 +35,7 @@ class RagflowCompatibleRetrievalService:
             question,
             answer_type_keywords=answer_type_keywords,
             entities_from_query=entities_from_query,
+            comm_topn=comm_topn,
         )
         evidence = assemble_evidence_cards(fulltext.hits, kg.graph_edges)
         community_evidence = [

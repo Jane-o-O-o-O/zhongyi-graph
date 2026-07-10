@@ -7,6 +7,7 @@ from app.models.graph import EvidenceCard, GraphEdge, GraphNode
 
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
+    comm_topn: int = Field(default=1, ge=0)
 
     @field_validator("question", mode="before")
     @classmethod

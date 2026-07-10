@@ -123,6 +123,89 @@ def test_ragflow_compatible_retrieval_service_returns_query_response_with_diagno
     assert response.diagnostics["community_reports"] == 1
 
 
+def test_ragflow_compatible_retrieval_service_honors_community_report_topn():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    repository = RagflowRetrievalRepository(engine)
+    repository.replace_documents(
+        [RetrievalDocument(doc_id="doc", source_id="doc", filename="doc.txt")]
+    )
+    repository.replace_chunks(
+        [
+            RetrievalChunk(
+                chunk_id="chunk:doc:0001",
+                doc_id="doc",
+                source_id="doc",
+                parent_unit_id="unit:1",
+                chunk_order_int=1,
+                page_num_int=1,
+                title="不寐",
+                section_path=[],
+                content="失眠可辨为心脾两虚，常用归脾汤。",
+                content_with_weight="不寐 失眠 心脾两虚 归脾汤 失眠可辨为心脾两虚，常用归脾汤。",
+                content_ltks="失眠 心脾两虚 归脾汤",
+                token_count=18,
+            )
+        ]
+    )
+    repository.replace_kg_entities(
+        [
+            RetrievalKgEntity(
+                entity_id="entity:失眠",
+                entity_name="失眠",
+                entity_type="Symptom",
+                source_node_id="symptom:失眠",
+                content_with_weight='{"description":"失眠 Symptom"}',
+                description="失眠 Symptom",
+                rank_flt=2.0,
+                evidence_chunk_ids=["chunk:doc:0001"],
+            )
+        ]
+    )
+    repository.replace_community_reports(
+        [
+            RetrievalCommunityReport(
+                report_id="community:失眠:1",
+                title="失眠核心社区",
+                content_with_weight="社区报告：失眠核心证候。",
+                summary="失眠核心证候",
+                evidences="失眠",
+                entities_kwd=["失眠"],
+                weight_flt=0.9,
+                source_id=["doc"],
+            ),
+            RetrievalCommunityReport(
+                report_id="community:失眠:2",
+                title="失眠治疗社区",
+                content_with_weight="社区报告：失眠治疗关系。",
+                summary="失眠治疗关系",
+                evidences="失眠",
+                entities_kwd=["失眠"],
+                weight_flt=0.8,
+                source_id=["doc"],
+            ),
+        ]
+    )
+    doc_store = RagflowDocStore(repository, EmbeddingClient.demo())
+    service = RagflowCompatibleRetrievalService(
+        repository=repository,
+        fulltext_retriever=RagflowFulltextRetriever(
+            doc_store=doc_store,
+            rerank_client=RerankClient.demo(),
+        ),
+        kg_search=RagflowKgSearch(doc_store),
+        llm_client=LlmClient.demo(),
+    )
+
+    response = service.answer("睡不着怎么处理？", comm_topn=2)
+
+    assert response.diagnostics["community_reports"] == 2
+
+
 def test_ragflow_compatible_retrieval_status_includes_readiness_report():
     engine = create_engine(
         "sqlite+pysqlite://",

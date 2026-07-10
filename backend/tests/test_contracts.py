@@ -108,6 +108,12 @@ def test_query_request_trims_question():
     assert request.question == "党参有什么功效？"
 
 
+def test_query_request_accepts_community_report_topn():
+    request = QueryRequest(question="失眠怎么辨证？", comm_topn=2)
+
+    assert request.comm_topn == 2
+
+
 def test_query_request_rejects_blank_question_after_trim():
     with pytest.raises(ValidationError):
         QueryRequest(question="   ")
