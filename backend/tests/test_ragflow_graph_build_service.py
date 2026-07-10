@@ -258,3 +258,29 @@ def test_build_syncs_retrieval_kg_index_from_global_graph():
     assert reports
     assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
     assert retrieval_repository.get_graph_artifact("graph:global") is not None
+
+
+class FailingForDocBExtractor(FixedExtractor):
+    def extract(self, chunks, hint_terms=None):
+        if chunks[0].source_id == "doc:b":
+            raise RuntimeError("extract failed")
+        return super().extract(chunks, hint_terms=hint_terms)
+
+
+def test_build_records_source_failure_and_continues_other_sources():
+    ingestion_repository, retrieval_repository = _repositories()
+    for source_id in ["doc:a", "doc:b"]:
+        ingestion_repository.upsert_source(_source(source_id))
+        ingestion_repository.replace_pages_and_chunks(source_id, [], [_chunk(source_id)])
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=FailingForDocBExtractor(),
+    ).build(["doc:a", "doc:b"])
+
+    assert summary.sources_total == 2
+    assert summary.sources_built == 1
+    assert summary.sources_failed == 1
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
+    assert retrieval_repository.get_subgraph_artifact("doc:b") is None

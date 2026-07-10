@@ -55,13 +55,19 @@ class RagflowGraphBuildService:
             if not chunks:
                 failed += 1
                 continue
-            entities, relations = self.graph_extractor.extract(chunks)
-            nodes, edges = _graph_from_candidates(source_id, entities, relations)
-            if not nodes:
+            try:
+                entities, relations = self.graph_extractor.extract(chunks)
+                nodes, edges = _graph_from_candidates(source_id, entities, relations)
+                if not nodes:
+                    failed += 1
+                    continue
+                self.retrieval_repository.save_graph_artifact(
+                    _subgraph_artifact(source_id, nodes, edges)
+                )
+                built += 1
+            except Exception:
                 failed += 1
                 continue
-            self.retrieval_repository.save_graph_artifact(_subgraph_artifact(source_id, nodes, edges))
-            built += 1
         merged_nodes, merged_edges, merged_sources = _merge_subgraph_artifacts(
             self.retrieval_repository.list_graph_artifacts(available_only=True)
         )
