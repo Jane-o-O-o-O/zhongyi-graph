@@ -1,4 +1,7 @@
+from dataclasses import dataclass
+
 from app.models.graph import GraphEdge, GraphNode
+import app.services.graph_analytics_service as graph_analytics_module
 from app.services.graph_analytics_service import GraphAnalyticsService
 
 
@@ -77,3 +80,65 @@ def test_graph_analytics_can_write_metrics_to_node_properties():
     assert nodes[0].properties["component_id"] == nodes[1].properties["component_id"]
     assert nodes[0].properties["community_id"] == nodes[1].properties["community_id"]
     assert nodes[0].properties["visual_weight"] > 0
+
+
+def test_graph_analytics_prefers_leiden_community_runner_when_available(monkeypatch):
+    @dataclass(frozen=True)
+    class FakePartition:
+        level: int
+        node: str
+        cluster: int
+
+    calls = []
+
+    def fake_hierarchical_leiden(graph, max_cluster_size, random_seed):
+        calls.append(
+            {
+                "nodes": sorted(graph.nodes),
+                "max_cluster_size": max_cluster_size,
+                "random_seed": random_seed,
+            }
+        )
+        return [
+            FakePartition(0, "node:0", 20),
+            FakePartition(0, "node:1", 10),
+            FakePartition(0, "node:2", 20),
+            FakePartition(0, "node:3", 10),
+            FakePartition(0, "node:4", 20),
+            FakePartition(0, "node:5", 10),
+            FakePartition(0, "node:6", 20),
+        ]
+
+    monkeypatch.setattr(
+        graph_analytics_module,
+        "_hierarchical_leiden",
+        fake_hierarchical_leiden,
+        raising=False,
+    )
+    nodes = [
+        GraphNode(id=f"node:{index}", label="Herb", name=f"节点{index}")
+        for index in range(7)
+    ]
+    edges = [
+        GraphEdge(
+            id=f"edge:{index}",
+            source=f"node:{index}",
+            target=f"node:{index + 1}",
+            relation="RELATED_TO",
+            display="相关",
+        )
+        for index in range(6)
+    ]
+
+    result = GraphAnalyticsService().analyze(nodes, edges)
+
+    assert calls == [
+        {
+            "nodes": [f"node:{index}" for index in range(7)],
+            "max_cluster_size": 12,
+            "random_seed": 0xDEADBEEF,
+        }
+    ]
+    assert result.by_node_id["node:0"].community_id == result.by_node_id["node:2"].community_id
+    assert result.by_node_id["node:1"].community_id == result.by_node_id["node:3"].community_id
+    assert result.by_node_id["node:0"].community_id != result.by_node_id["node:1"].community_id

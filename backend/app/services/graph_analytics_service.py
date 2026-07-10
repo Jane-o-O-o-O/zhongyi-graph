@@ -7,8 +7,15 @@ import networkx as nx
 
 from app.models.graph import GraphEdge, GraphNode
 
+try:
+    from graspologic.partition import hierarchical_leiden as _hierarchical_leiden
+except ImportError:
+    _hierarchical_leiden = None
+
 
 LOW_VALUE_LABELS = {"Dose", "Alias", "Source", "Category", "DistributionArea"}
+DEFAULT_LEIDEN_MAX_CLUSTER_SIZE = 12
+DEFAULT_LEIDEN_SEED = 0xDEADBEEF
 
 LABEL_WEIGHTS = {
     "Formula": 1.45,
@@ -180,7 +187,10 @@ def _communities(graph: nx.Graph) -> dict[str, int]:
         )
     )
     for component in components:
-        if component.number_of_nodes() <= 6 or component.number_of_edges() == 0:
+        leiden_communities = _leiden_communities(component)
+        if leiden_communities is not None:
+            communities = leiden_communities
+        elif component.number_of_nodes() <= 6 or component.number_of_edges() == 0:
             communities = [sorted(component.nodes)]
         else:
             try:
@@ -197,3 +207,31 @@ def _communities(graph: nx.Graph) -> dict[str, int]:
                 community_by_node[node_id] = next_community_id
             next_community_id += 1
     return community_by_node
+
+
+def _leiden_communities(graph: nx.Graph) -> list[list[str]] | None:
+    if _hierarchical_leiden is None or graph.number_of_edges() == 0:
+        return None
+    try:
+        partitions = _hierarchical_leiden(
+            graph,
+            max_cluster_size=DEFAULT_LEIDEN_MAX_CLUSTER_SIZE,
+            random_seed=DEFAULT_LEIDEN_SEED,
+        )
+    except Exception:
+        return None
+
+    clusters: dict[int, list[str]] = {}
+    for partition in partitions:
+        if int(getattr(partition, "level", 0)) != 0:
+            continue
+        node_id = str(getattr(partition, "node", ""))
+        if node_id not in graph:
+            continue
+        cluster_id = int(getattr(partition, "cluster"))
+        clusters.setdefault(cluster_id, []).append(node_id)
+
+    covered_nodes = {node_id for nodes in clusters.values() for node_id in nodes}
+    if covered_nodes != set(str(node_id) for node_id in graph.nodes):
+        return None
+    return [sorted(nodes) for _, nodes in sorted(clusters.items())]
