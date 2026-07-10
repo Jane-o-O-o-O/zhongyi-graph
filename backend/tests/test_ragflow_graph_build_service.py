@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
-from app.models.graph import GraphNode
+from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import (
     DocumentChunk,
     EntityCandidate,
@@ -559,6 +559,63 @@ def test_build_merges_duplicate_subgraph_node_provenance_like_ragflow_graph_merg
     assert node["properties"]["source_id"] == ["doc:a", "doc:b"]
     assert node["properties"]["source_chunk_ids"] == ["chunk:doc:a:1", "chunk:doc:b:1"]
     assert node["properties"]["confidence"] == 0.91
+
+
+def test_build_merges_duplicate_subgraph_edges_by_relation_endpoints_like_ragflow_graph_merge():
+    ingestion_repository, retrieval_repository = _repositories()
+    nodes = [
+        GraphNode(id="entity:symptom:失眠", label="Symptom", name="失眠", description="失眠"),
+        GraphNode(
+            id="entity:syndrome:心脾两虚",
+            label="Syndrome",
+            name="心脾两虚",
+            description="心脾两虚",
+        ),
+    ]
+    for source_id, edge_id, evidence_id in [
+        ("doc:a", "edge:doc:a:失眠:心脾两虚", "chunk:doc:a:1"),
+        ("doc:b", "edge:doc:b:失眠:心脾两虚", "chunk:doc:b:1"),
+    ]:
+        ingestion_repository.upsert_source(_source(source_id))
+        ingestion_repository.replace_pages_and_chunks(source_id, [], [_chunk(source_id)])
+        retrieval_repository.save_graph_artifact(
+            RetrievalGraphArtifact(
+                artifact_id=f"subgraph:{source_id}",
+                artifact_type="subgraph",
+                content_with_weight=json.dumps(
+                    {
+                        "nodes": [node.model_dump() for node in nodes],
+                        "edges": [
+                            GraphEdge(
+                                id=edge_id,
+                                source="entity:symptom:失眠",
+                                target="entity:syndrome:心脾两虚",
+                                relation="MANIFESTS_AS",
+                                display="可辨为",
+                                evidence_ids=[evidence_id],
+                            ).model_dump()
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                source_id=[source_id],
+                node_count=2,
+                edge_count=1,
+            )
+        )
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=RecordingExtractor(),
+    ).build(["doc:a", "doc:b"], with_resolution=False, with_community=False)
+
+    global_artifact = retrieval_repository.get_graph_artifact("graph:global")
+    assert global_artifact is not None
+    assert summary.global_edges == 1
+    payload = json.loads(global_artifact.content_with_weight)
+    assert len(payload["edges"]) == 1
+    assert payload["edges"][0]["evidence_ids"] == ["chunk:doc:a:1", "chunk:doc:b:1"]
 
 
 def test_build_clears_phase_markers_when_new_subgraph_changes_graph():

@@ -659,7 +659,7 @@ def _graph_payload(nodes: list[GraphNode], edges: list[GraphEdge]) -> dict:
 
 def _merge_subgraph_artifacts(artifacts) -> tuple[list[GraphNode], list[GraphEdge], list[str]]:
     nodes_by_id: dict[str, GraphNode] = {}
-    edges_by_id: dict[str, GraphEdge] = {}
+    edges_by_key: dict[tuple[str, str, str], GraphEdge] = {}
     merged_sources: set[str] = set()
     for artifact in sorted(artifacts, key=lambda item: item.artifact_id):
         if artifact.artifact_type != "subgraph" or artifact.available_int != 1:
@@ -674,13 +674,14 @@ def _merge_subgraph_artifacts(artifacts) -> tuple[list[GraphNode], list[GraphEdg
             nodes_by_id[node.id] = node
         for edge_data in payload.get("edges", []):
             edge = GraphEdge.model_validate(edge_data)
-            existing = edges_by_id.get(edge.id)
+            edge_key = _edge_merge_key(edge)
+            existing = edges_by_key.get(edge_key)
             if existing:
                 edge = _merge_edge(existing, edge)
-            edges_by_id[edge.id] = edge
+            edges_by_key[edge_key] = edge
     return (
         [nodes_by_id[node_id] for node_id in sorted(nodes_by_id)],
-        [edges_by_id[edge_id] for edge_id in sorted(edges_by_id)],
+        sorted(edges_by_key.values(), key=lambda edge: edge.id),
         sorted(merged_sources),
     )
 
@@ -754,6 +755,11 @@ def _unique(values: list[str]) -> list[str]:
 def _merge_edge(left: GraphEdge, right: GraphEdge) -> GraphEdge:
     evidence_ids = sorted(set(left.evidence_ids) | set(right.evidence_ids))
     return left.model_copy(update={"evidence_ids": evidence_ids})
+
+
+def _edge_merge_key(edge: GraphEdge) -> tuple[str, str, str]:
+    source, target = sorted([edge.source, edge.target])
+    return source, target, edge.relation
 
 
 def _global_graph_artifact(
