@@ -107,6 +107,19 @@ retrieval_kg_community_reports_table = Table(
     Column("metadata", JSON, nullable=False, default=dict),
 )
 
+retrieval_kg_graph_artifacts_table = Table(
+    "retrieval_kg_graph_artifacts",
+    retrieval_metadata,
+    Column("artifact_id", String, primary_key=True),
+    Column("artifact_type", String, nullable=False, index=True),
+    Column("content_with_weight", Text, nullable=False),
+    Column("source_id", JSON, nullable=False, default=list),
+    Column("node_count", Integer, nullable=False, default=0),
+    Column("edge_count", Integer, nullable=False, default=0),
+    Column("available_int", Integer, nullable=False, default=1, index=True),
+    Column("metadata", JSON, nullable=False, default=dict),
+)
+
 retrieval_kg_type_samples_table = Table(
     "retrieval_kg_type_samples",
     retrieval_metadata,

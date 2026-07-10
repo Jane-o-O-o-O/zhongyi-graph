@@ -17,6 +17,7 @@ from app.services.ragflow_compat.schemas import (
     RetrievalChunk,
     RetrievalChunkTerm,
     RetrievalDocument,
+    RetrievalGraphArtifact,
     RetrievalKgEntity,
     RetrievalKgRelation,
     RetrievalTypeSamples,
@@ -81,6 +82,7 @@ class RagflowRetrievalSyncService:
                 evidence_lookup,
             )
             community_reports = self._community_reports_from_graph(self.graph_service)
+            graph_artifacts = self._graph_artifacts_from_graph(self.graph_service)
         else:
             retrieval_entities = [
                 self._entity_from_candidate(source_id, entity)
@@ -91,6 +93,7 @@ class RagflowRetrievalSyncService:
                 for source_id, relation in relations_with_source
             ]
             community_reports = []
+            graph_artifacts = []
         retrieval_type_samples = self._type_samples(retrieval_entities)
 
         self.retrieval_repository.clear_rebuild_tables()
@@ -114,6 +117,7 @@ class RagflowRetrievalSyncService:
         self.retrieval_repository.append_kg_entities(retrieval_entities)
         self.retrieval_repository.append_kg_relations(retrieval_relations)
         self.retrieval_repository.append_community_reports(community_reports)
+        self.retrieval_repository.append_graph_artifacts(graph_artifacts)
         self.retrieval_repository.append_type_samples(retrieval_type_samples)
         return {
             "documents": len(retrieval_documents),
@@ -121,6 +125,7 @@ class RagflowRetrievalSyncService:
             "kg_entities": len(retrieval_entities),
             "kg_relations": len(retrieval_relations),
             "community_reports": len(community_reports),
+            "graph_artifacts": len(graph_artifacts),
         }
 
     def _document_from_source(
@@ -326,6 +331,41 @@ class RagflowRetrievalSyncService:
             )
         return reports
 
+    def _graph_artifacts_from_graph(
+        self,
+        graph_service: GraphService,
+    ) -> list[RetrievalGraphArtifact]:
+        artifacts = [
+            RetrievalGraphArtifact(
+                artifact_id="graph:global",
+                artifact_type="graph",
+                content_with_weight=json.dumps(
+                    _graph_payload(graph_service.nodes, graph_service.edges),
+                    ensure_ascii=False,
+                ),
+                source_id=_graph_source_ids(graph_service.nodes, graph_service.edges),
+                node_count=len(graph_service.nodes),
+                edge_count=len(graph_service.edges),
+                metadata={"scope": "global"},
+            )
+        ]
+        for source_id, payload in sorted(_subgraph_groups(graph_service).items()):
+            artifacts.append(
+                RetrievalGraphArtifact(
+                    artifact_id=f"subgraph:{source_id}",
+                    artifact_type="subgraph",
+                    content_with_weight=json.dumps(
+                        _graph_payload(payload["nodes"], payload["edges"]),
+                        ensure_ascii=False,
+                    ),
+                    source_id=[source_id],
+                    node_count=len(payload["nodes"]),
+                    edge_count=len(payload["edges"]),
+                    metadata={"scope": "source"},
+                )
+            )
+        return artifacts
+
     def _terms_from_chunk(self, chunk: RetrievalChunk) -> list[RetrievalChunkTerm]:
         terms = [
             *(RetrievalChunkTerm(chunk.chunk_id, term, "content", 1.0) for term in chunk.content_ltks.split()),
@@ -429,6 +469,81 @@ def _community_source_ids(graph_service: GraphService, community_id: int) -> lis
         if edge.source in node_ids and edge.target in node_ids:
             source_ids.extend(edge.evidence_ids)
     return _unique(source_ids)
+
+
+def _graph_source_ids(nodes: list[GraphNode], edges) -> list[str]:
+    source_ids: list[str] = []
+    for node in nodes:
+        source_ids.extend(_source_groups_from_node(node))
+    for edge in edges:
+        source_ids.extend(_source_groups_from_evidence(edge.evidence_ids))
+    return _unique(source_ids)
+
+
+def _subgraph_groups(graph_service: GraphService) -> dict[str, dict]:
+    nodes_by_id = {node.id: node for node in graph_service.nodes}
+    edges_by_id = {edge.id: edge for edge in graph_service.edges}
+    grouped_node_ids: dict[str, set[str]] = defaultdict(set)
+    grouped_edge_ids: dict[str, set[str]] = defaultdict(set)
+
+    for node in graph_service.nodes:
+        for source_id in _source_groups_from_node(node):
+            grouped_node_ids[source_id].add(node.id)
+
+    for edge in graph_service.edges:
+        source_ids = _source_groups_from_evidence(edge.evidence_ids)
+        if not source_ids and edge.source in nodes_by_id and edge.target in nodes_by_id:
+            source_ids = sorted(
+                set(_source_groups_from_node(nodes_by_id[edge.source]))
+                | set(_source_groups_from_node(nodes_by_id[edge.target]))
+            )
+        for source_id in source_ids:
+            grouped_edge_ids[source_id].add(edge.id)
+            grouped_node_ids[source_id].add(edge.source)
+            grouped_node_ids[source_id].add(edge.target)
+
+    groups: dict[str, dict] = {}
+    for source_id, node_ids in grouped_node_ids.items():
+        nodes = [
+            nodes_by_id[node_id]
+            for node_id in sorted(node_ids)
+            if node_id in nodes_by_id
+        ]
+        edge_ids = grouped_edge_ids.get(source_id, set())
+        edges = [
+            edges_by_id[edge_id]
+            for edge_id in sorted(edge_ids)
+            if edge_id in edges_by_id
+            and edges_by_id[edge_id].source in node_ids
+            and edges_by_id[edge_id].target in node_ids
+        ]
+        if nodes or edges:
+            groups[source_id] = {"nodes": nodes, "edges": edges}
+    return groups
+
+
+def _graph_payload(nodes: list[GraphNode], edges) -> dict:
+    return {
+        "nodes": [node.model_dump() for node in nodes],
+        "edges": [edge.model_dump() for edge in edges],
+    }
+
+
+def _source_groups_from_node(node: GraphNode) -> list[str]:
+    return _source_groups_from_evidence(_source_chunks_from_graph_node(node))
+
+
+def _source_groups_from_evidence(evidence_ids: list[str]) -> list[str]:
+    return _unique([_source_group(str(value)) for value in evidence_ids if str(value).strip()])
+
+
+def _source_group(value: str) -> str:
+    parts = value.split(":")
+    if len(parts) >= 3 and parts[0] in {"chunk", "evidence"}:
+        if parts[1] == "source" and len(parts) >= 4:
+            return ":".join(parts[1:-1])
+        return parts[1]
+    return value
 
 
 def _n_hop_paths_from_graph(

@@ -92,6 +92,7 @@ def test_sync_service_rebuilds_documents_chunks_entities_relations_from_existing
         "kg_entities": 2,
         "kg_relations": 1,
         "community_reports": 0,
+        "graph_artifacts": 0,
     }
     document = retrieval_repository.list_documents()[0]
     assert document.doc_id == source.source_id
@@ -187,12 +188,18 @@ def test_sync_service_rebuilds_kg_index_from_graph_service_when_available():
     assert summary["kg_entities"] == 2
     assert summary["kg_relations"] == 1
     assert summary["community_reports"] == 1
+    assert summary["graph_artifacts"] == 2
     entities = retrieval_repository.list_kg_entities()
     relations = retrieval_repository.list_kg_relations()
+    graph_artifacts = retrieval_repository.list_graph_artifacts()
     assert {entity.entity_name for entity in entities} == {"失眠", "心脾两虚"}
     assert relations[0].from_entity_kwd == "失眠"
     assert relations[0].to_entity_kwd == "心脾两虚"
     assert relations[0].evidence_chunk_ids == ["chunk:1"]
+    assert {artifact.artifact_type for artifact in graph_artifacts} == {"graph", "subgraph"}
+    assert graph_artifacts[0].node_count == 2
+    assert graph_artifacts[0].edge_count == 1
+    assert any("chunk:1" in artifact.source_id for artifact in graph_artifacts)
     community_report = retrieval_repository.list_community_reports()[0]
     assert community_report.entities_kwd == ["失眠", "心脾两虚"]
     assert "失眠" in community_report.content_with_weight

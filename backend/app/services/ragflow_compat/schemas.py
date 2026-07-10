@@ -104,6 +104,18 @@ class RetrievalCommunityReport:
 
 
 @dataclass(frozen=True)
+class RetrievalGraphArtifact:
+    artifact_id: str
+    artifact_type: str
+    content_with_weight: str
+    source_id: list[str] = field(default_factory=list)
+    node_count: int = 0
+    edge_count: int = 0
+    available_int: int = 1
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RetrievalTypeSamples:
     entity_type: str
     sample_entities: list[str]
@@ -123,6 +135,7 @@ class RetrievalAudit:
     kg_entities_with_evidence: int
     kg_relations: int
     community_reports: int
+    graph_artifacts: int
     kg_relations_with_vectors: int
     kg_relations_failed_vectors: int
     kg_relations_with_evidence: int

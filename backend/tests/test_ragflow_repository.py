@@ -6,6 +6,7 @@ from app.services.ragflow_compat.schemas import (
     RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
+    RetrievalGraphArtifact,
     RetrievalKgEntity,
     RetrievalKgRelation,
     RetrievalTypeSamples,
@@ -33,6 +34,7 @@ def test_repository_creates_ragflow_compatible_tables():
         "retrieval_kg_entities",
         "retrieval_kg_relations",
         "retrieval_kg_community_reports",
+        "retrieval_kg_graph_artifacts",
         "retrieval_kg_type_samples",
         "retrieval_sync_state",
         "retrieval_query_logs",
@@ -110,12 +112,22 @@ def test_repository_round_trips_retrieval_rows():
         weight_flt=0.9,
         source_id=[document.doc_id],
     )
+    graph_artifact = RetrievalGraphArtifact(
+        artifact_id="graph:global",
+        artifact_type="graph",
+        content_with_weight='{"nodes":[],"edges":[]}',
+        source_id=[document.doc_id],
+        node_count=2,
+        edge_count=1,
+        metadata={"kind": "global"},
+    )
 
     repository.replace_documents([document])
     repository.replace_chunks([chunk])
     repository.replace_kg_entities([entity])
     repository.replace_kg_relations([relation])
     repository.replace_community_reports([community_report])
+    repository.replace_graph_artifacts([graph_artifact])
     repository.replace_type_samples([samples])
 
     assert repository.list_documents() == [document]
@@ -123,6 +135,7 @@ def test_repository_round_trips_retrieval_rows():
     assert repository.list_kg_entities() == [entity]
     assert repository.list_kg_relations() == [relation]
     assert repository.list_community_reports() == [community_report]
+    assert repository.list_graph_artifacts() == [graph_artifact]
     assert repository.list_type_samples() == [samples]
 
 

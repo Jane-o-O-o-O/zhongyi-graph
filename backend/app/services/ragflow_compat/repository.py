@@ -13,6 +13,7 @@ from app.services.ragflow_compat.schemas import (
     RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
+    RetrievalGraphArtifact,
     RetrievalKgEntity,
     RetrievalKgRelation,
     RetrievalTypeSamples,
@@ -23,6 +24,7 @@ from app.services.ragflow_compat.tables import (
     retrieval_documents_table,
     retrieval_kg_entities_table,
     retrieval_kg_community_reports_table,
+    retrieval_kg_graph_artifacts_table,
     retrieval_kg_relations_table,
     retrieval_kg_type_samples_table,
     retrieval_metadata,
@@ -66,6 +68,7 @@ class RagflowRetrievalRepository:
                 retrieval_kg_entities_table,
                 retrieval_kg_relations_table,
                 retrieval_kg_community_reports_table,
+                retrieval_kg_graph_artifacts_table,
                 retrieval_kg_type_samples_table,
             ]:
                 connection.execute(delete(table))
@@ -88,6 +91,9 @@ class RagflowRetrievalRepository:
     def append_community_reports(self, reports: list[RetrievalCommunityReport]) -> None:
         self._append(retrieval_kg_community_reports_table, [_row(report) for report in reports])
 
+    def append_graph_artifacts(self, artifacts: list[RetrievalGraphArtifact]) -> None:
+        self._append(retrieval_kg_graph_artifacts_table, [_row(artifact) for artifact in artifacts])
+
     def append_type_samples(self, samples: list[RetrievalTypeSamples]) -> None:
         self._append(retrieval_kg_type_samples_table, [_row(sample) for sample in samples])
 
@@ -99,6 +105,9 @@ class RagflowRetrievalRepository:
 
     def replace_community_reports(self, reports: list[RetrievalCommunityReport]) -> None:
         self._replace_all(retrieval_kg_community_reports_table, [_row(report) for report in reports])
+
+    def replace_graph_artifacts(self, artifacts: list[RetrievalGraphArtifact]) -> None:
+        self._replace_all(retrieval_kg_graph_artifacts_table, [_row(artifact) for artifact in artifacts])
 
     def replace_type_samples(self, samples: list[RetrievalTypeSamples]) -> None:
         self._replace_all(retrieval_kg_type_samples_table, [_row(sample) for sample in samples])
@@ -334,6 +343,23 @@ class RagflowRetrievalRepository:
         )
         return matched[:limit]
 
+    def list_graph_artifacts(
+        self,
+        *,
+        available_only: bool = False,
+    ) -> list[RetrievalGraphArtifact]:
+        statement = select(retrieval_kg_graph_artifacts_table).order_by(
+            retrieval_kg_graph_artifacts_table.c.artifact_type,
+            retrieval_kg_graph_artifacts_table.c.artifact_id,
+        )
+        if available_only:
+            statement = statement.where(retrieval_kg_graph_artifacts_table.c.available_int == 1)
+        with self.engine.begin() as connection:
+            return [
+                RetrievalGraphArtifact(**dict(row._mapping))
+                for row in connection.execute(statement)
+            ]
+
     def list_type_samples(self) -> list[RetrievalTypeSamples]:
         return self._list_all(
             retrieval_kg_type_samples_table,
@@ -485,6 +511,7 @@ class RagflowRetrievalRepository:
             )
             kg_relations = _count(connection, retrieval_kg_relations_table)
             community_reports = _count(connection, retrieval_kg_community_reports_table)
+            graph_artifacts = _count(connection, retrieval_kg_graph_artifacts_table)
             kg_relations_with_vectors = _count_where(
                 connection,
                 retrieval_kg_relations_table,
@@ -521,6 +548,7 @@ class RagflowRetrievalRepository:
             kg_entities_with_evidence=kg_entities_with_evidence,
             kg_relations=kg_relations,
             community_reports=community_reports,
+            graph_artifacts=graph_artifacts,
             kg_relations_with_vectors=kg_relations_with_vectors,
             kg_relations_failed_vectors=kg_relations_failed_vectors,
             kg_relations_with_evidence=kg_relations_with_evidence,
@@ -615,6 +643,7 @@ class RagflowRetrievalRepository:
             "kg_entities": audit.kg_entities,
             "kg_relations": audit.kg_relations,
             "community_reports": audit.community_reports,
+            "graph_artifacts": audit.graph_artifacts,
             "vector_coverage": vector_coverage,
             "evidence_coverage": evidence_coverage,
             "vector_sync_plan": vector_sync_plan,

@@ -93,6 +93,7 @@ class RagflowCompatibleRetrievalService:
             "kg_entities_failed_vectors": audit.kg_entities_failed_vectors,
             "kg_relations": audit.kg_relations,
             "community_reports": audit.community_reports,
+            "graph_artifacts": audit.graph_artifacts,
             "kg_relations_with_vectors": audit.kg_relations_with_vectors,
             "kg_relations_failed_vectors": audit.kg_relations_failed_vectors,
             "short_chunks": audit.short_chunks,
