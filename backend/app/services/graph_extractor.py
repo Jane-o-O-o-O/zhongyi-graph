@@ -15,9 +15,40 @@ class GraphExtractor:
     ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
         if self.method == "ner":
             return self._extract_with_ner(chunks)
+        if self.method == "general" and self.llm_extractor:
+            return self._extract_with_general(chunks)
         if self.llm_extractor:
             return self._extract_with_llm(chunks, hint_terms=hint_terms or [])
         return [], []
+
+    def _extract_with_general(
+        self,
+        chunks: list[DocumentChunk],
+    ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        if not hasattr(self.llm_extractor, "extract_chunks_batch"):
+            return self._extract_with_llm(chunks, hint_terms=[])
+        items = [
+            {"unit_id": chunk.chunk_id, "text": chunk.content}
+            for chunk in chunks
+            if chunk.content.strip()
+        ]
+        if not items:
+            return [], []
+        try:
+            payload = self.llm_extractor.extract_chunks_batch(items)
+        except Exception:
+            return [], []
+        chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
+        entities: dict[str, EntityCandidate] = {}
+        relations: dict[str, RelationCandidate] = {}
+        for item in payload.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            chunk = chunks_by_id.get(str(item.get("unit_id", "")).strip())
+            if not chunk:
+                continue
+            _merge_extracted_payload(entities, relations, chunk, item)
+        return list(entities.values()), list(relations.values())
 
     def _extract_with_ner(
         self,
@@ -72,60 +103,7 @@ class GraphExtractor:
                 extracted = self.llm_extractor.extract_chunk(chunk.content, hints=hint_terms)
             except Exception:
                 continue
-
-            entity_labels: dict[str, str] = {}
-            canonical_names: dict[str, str] = {}
-            for item in extracted.get("entities", []):
-                raw_name = _first_text(item, "name", "text", "value", "entity", "entity_id")
-                label = _normalize_label(_first_text(item, "label", "type", "category"))
-                name = _canonical_name(raw_name, label)
-                if not name or not label:
-                    continue
-                entity_id = _entity_id(label, name)
-                canonical_names[raw_name] = name
-                entity_labels[name] = label
-                existing = entities.get(entity_id)
-                chunk_ids = [chunk.chunk_id]
-                if existing:
-                    chunk_ids = sorted(set(existing.source_chunk_ids + chunk_ids))
-                entities[entity_id] = EntityCandidate(
-                    entity_id=entity_id,
-                    name=name,
-                    label=label,
-                    normalized_name=name,
-                    source_chunk_ids=chunk_ids,
-                    confidence=float(item.get("confidence") or 0.75),
-                )
-
-            for item in extracted.get("relations", []):
-                raw_source_name = _first_text(item, "source", "subject", "head", "from")
-                raw_target_name = _first_text(item, "target", "object", "tail", "to")
-                source_name = canonical_names.get(raw_source_name, raw_source_name)
-                target_name = canonical_names.get(raw_target_name, raw_target_name)
-                relation = _normalize_relation(str(item.get("relation", "")))
-                display = str(item.get("display", "")).strip() or _display_for_relation(relation)
-                if not source_name or not target_name or not relation:
-                    continue
-                source_label = entity_labels.get(source_name)
-                target_label = entity_labels.get(target_name)
-                if not source_label or not target_label:
-                    continue
-                source_id = _entity_id(source_label, source_name)
-                target_id = _entity_id(target_label, target_name)
-                relation_id = f"relation:{source_id}:{relation}:{target_id}"
-                existing = relations.get(relation_id)
-                evidence_chunk_ids = [chunk.chunk_id]
-                if existing:
-                    evidence_chunk_ids = sorted(set(existing.evidence_chunk_ids + evidence_chunk_ids))
-                relations[relation_id] = RelationCandidate(
-                    relation_id=relation_id,
-                    source_entity_id=source_id,
-                    target_entity_id=target_id,
-                    relation=relation,
-                    display=display,
-                    evidence_chunk_ids=evidence_chunk_ids,
-                    confidence=float(item.get("confidence") or 0.72),
-                )
+            _merge_extracted_payload(entities, relations, chunk, extracted)
         return list(entities.values()), list(relations.values())
 
 
@@ -138,6 +116,67 @@ def _entity_id(label: str, name: str) -> str:
         "Herb": "herb",
     }.get(label, label.lower())
     return f"entity:{label_prefix}:{name}"
+
+
+def _merge_extracted_payload(
+    entities: dict[str, EntityCandidate],
+    relations: dict[str, RelationCandidate],
+    chunk: DocumentChunk,
+    extracted: dict,
+) -> None:
+    entity_labels: dict[str, str] = {}
+    canonical_names: dict[str, str] = {}
+    for item in extracted.get("entities", []):
+        raw_name = _first_text(item, "name", "text", "value", "entity", "entity_id")
+        label = _normalize_label(_first_text(item, "label", "type", "category"))
+        name = _canonical_name(raw_name, label)
+        if not name or not label:
+            continue
+        entity_id = _entity_id(label, name)
+        canonical_names[raw_name] = name
+        entity_labels[name] = label
+        existing = entities.get(entity_id)
+        chunk_ids = [chunk.chunk_id]
+        if existing:
+            chunk_ids = sorted(set(existing.source_chunk_ids + chunk_ids))
+        entities[entity_id] = EntityCandidate(
+            entity_id=entity_id,
+            name=name,
+            label=label,
+            normalized_name=name,
+            source_chunk_ids=chunk_ids,
+            confidence=float(item.get("confidence") or 0.75),
+        )
+
+    for item in extracted.get("relations", []):
+        raw_source_name = _first_text(item, "source", "subject", "head", "from")
+        raw_target_name = _first_text(item, "target", "object", "tail", "to")
+        source_name = canonical_names.get(raw_source_name, raw_source_name)
+        target_name = canonical_names.get(raw_target_name, raw_target_name)
+        relation = _normalize_relation(str(item.get("relation", "")))
+        display = str(item.get("display", "")).strip() or _display_for_relation(relation)
+        if not source_name or not target_name or not relation:
+            continue
+        source_label = entity_labels.get(source_name)
+        target_label = entity_labels.get(target_name)
+        if not source_label or not target_label:
+            continue
+        source_id = _entity_id(source_label, source_name)
+        target_id = _entity_id(target_label, target_name)
+        relation_id = f"relation:{source_id}:{relation}:{target_id}"
+        existing = relations.get(relation_id)
+        evidence_chunk_ids = [chunk.chunk_id]
+        if existing:
+            evidence_chunk_ids = sorted(set(existing.evidence_chunk_ids + evidence_chunk_ids))
+        relations[relation_id] = RelationCandidate(
+            relation_id=relation_id,
+            source_entity_id=source_id,
+            target_entity_id=target_id,
+            relation=relation,
+            display=display,
+            evidence_chunk_ids=evidence_chunk_ids,
+            confidence=float(item.get("confidence") or 0.72),
+        )
 
 
 def _first_text(item: dict[str, Any], *keys: str) -> str:

@@ -134,6 +134,98 @@ def test_graph_extractor_uses_llm_structured_output_for_new_entities():
     )
 
 
+def test_graph_extractor_general_method_uses_batch_extraction_units():
+    class FakeBatchExtractor:
+        def __init__(self):
+            self.batch_calls = []
+            self.chunk_calls = 0
+
+        def extract_chunk(self, text, hints=None):
+            self.chunk_calls += 1
+            raise AssertionError("general method should use batch extraction")
+
+        def extract_chunks_batch(self, items):
+            self.batch_calls.append(items)
+            return {
+                "items": [
+                    {
+                        "unit_id": items[0]["unit_id"],
+                        "entities": [
+                            {"name": "失眠", "label": "Symptom", "confidence": 0.91},
+                            {"name": "心脾两虚", "label": "Syndrome", "confidence": 0.88},
+                        ],
+                        "relations": [
+                            {
+                                "source": "失眠",
+                                "target": "心脾两虚",
+                                "relation": "MANIFESTS_AS",
+                                "display": "可辨为",
+                                "confidence": 0.82,
+                            }
+                        ],
+                    },
+                    {
+                        "unit_id": items[1]["unit_id"],
+                        "entities": [
+                            {"name": "归脾汤", "label": "Formula", "confidence": 0.86},
+                            {"name": "党参", "label": "Herb", "confidence": 0.84},
+                        ],
+                        "relations": [
+                            {
+                                "source": "归脾汤",
+                                "target": "党参",
+                                "relation": "COMPOSED_OF",
+                                "display": "组成",
+                                "confidence": 0.81,
+                            }
+                        ],
+                    },
+                ]
+            }
+
+    extractor = FakeBatchExtractor()
+    chunks = [
+        DocumentChunk(
+            chunk_id="chunk:general:1",
+            source_id="source:general",
+            page_id="page:general:1",
+            chunk_index=1,
+            content="失眠可辨为心脾两虚。",
+        ),
+        DocumentChunk(
+            chunk_id="chunk:general:2",
+            source_id="source:general",
+            page_id="page:general:1",
+            chunk_index=2,
+            content="归脾汤由党参等药组成。",
+        ),
+    ]
+
+    entities, relations = GraphExtractor(
+        llm_extractor=extractor,
+        method="general",
+    ).extract(chunks)
+
+    assert extractor.chunk_calls == 0
+    assert extractor.batch_calls == [
+        [
+            {"unit_id": "chunk:general:1", "text": "失眠可辨为心脾两虚。"},
+            {"unit_id": "chunk:general:2", "text": "归脾汤由党参等药组成。"},
+        ]
+    ]
+    assert {entity.name for entity in entities} == {"失眠", "心脾两虚", "归脾汤", "党参"}
+    assert any(
+        relation.relation == "MANIFESTS_AS"
+        and relation.evidence_chunk_ids == ["chunk:general:1"]
+        for relation in relations
+    )
+    assert any(
+        relation.relation == "COMPOSED_OF"
+        and relation.evidence_chunk_ids == ["chunk:general:2"]
+        for relation in relations
+    )
+
+
 def test_graph_extractor_normalizes_llm_symptom_aliases_after_extraction():
     class FakeLlmExtractor:
         def extract_chunk(self, text, hints=None):
