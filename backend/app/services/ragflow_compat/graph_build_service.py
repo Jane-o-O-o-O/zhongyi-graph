@@ -8,6 +8,7 @@ from app.models.ingestion import EntityCandidate, RelationCandidate
 from app.services.graph_extractor import GraphExtractor
 from app.services.graph_service import GraphService
 from app.services.ingestion_repository import IngestionRepository
+from app.services.ragflow_compat.entity_resolution import RagflowGraphEntityResolutionService
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
@@ -28,6 +29,9 @@ class RagflowGraphBuildSummary:
     community_marker_cleared: bool = False
     resolution_marker_set: bool = False
     community_marker_set: bool = False
+    resolution_pairs_replayed: int = 0
+    resolution_pairs_resolved: int = 0
+    resolution_pairs_merged: int = 0
 
 
 class RagflowGraphBuildService:
@@ -37,11 +41,15 @@ class RagflowGraphBuildService:
         ingestion_repository: IngestionRepository,
         retrieval_repository: RagflowRetrievalRepository,
         graph_extractor: GraphExtractor,
+        entity_resolution_service: RagflowGraphEntityResolutionService | None = None,
         chunk_batch_size: int = 1000,
     ):
         self.ingestion_repository = ingestion_repository
         self.retrieval_repository = retrieval_repository
         self.graph_extractor = graph_extractor
+        self.entity_resolution_service = (
+            entity_resolution_service or RagflowGraphEntityResolutionService()
+        )
         self.chunk_batch_size = chunk_batch_size
 
     def build(
@@ -79,6 +87,20 @@ class RagflowGraphBuildService:
         merged_nodes, merged_edges, merged_sources = _merge_subgraph_artifacts(
             self.retrieval_repository.list_graph_artifacts(available_only=True)
         )
+        resolution_pairs_replayed = 0
+        resolution_pairs_resolved = 0
+        resolution_pairs_merged = 0
+        if with_resolution and (merged_nodes or merged_edges):
+            resolution_result = self.entity_resolution_service.resolve(
+                nodes=merged_nodes,
+                edges=merged_edges,
+                repository=self.retrieval_repository,
+            )
+            merged_nodes = resolution_result.nodes
+            merged_edges = resolution_result.edges
+            resolution_pairs_replayed = resolution_result.pairs_replayed
+            resolution_pairs_resolved = resolution_result.pairs_resolved
+            resolution_pairs_merged = resolution_result.pairs_merged
         if merged_nodes or merged_edges:
             self.retrieval_repository.save_graph_artifact(
                 _global_graph_artifact(merged_nodes, merged_edges, merged_sources)
@@ -123,6 +145,9 @@ class RagflowGraphBuildService:
             community_marker_cleared=community_marker_cleared,
             resolution_marker_set=resolution_marker_set,
             community_marker_set=community_marker_set,
+            resolution_pairs_replayed=resolution_pairs_replayed,
+            resolution_pairs_resolved=resolution_pairs_resolved,
+            resolution_pairs_merged=resolution_pairs_merged,
         )
 
     def _source_ids(self, source_ids: list[str] | None) -> list[str]:

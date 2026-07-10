@@ -13,6 +13,11 @@ from app.models.ingestion import (
     SourceManifest,
 )
 from app.services.ingestion_repository import IngestionRepository
+from app.services.ragflow_compat.checkpoints import (
+    RESOLUTION_CHECKPOINT,
+    resolution_checkpoint_key,
+)
+from app.services.ragflow_compat.entity_resolution import RagflowGraphEntityResolutionService
 from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
@@ -137,6 +142,60 @@ class FixedExtractor:
                 confidence=0.8,
             )
         ]
+
+
+class AliasPairExtractor:
+    def extract(self, chunks, hint_terms=None):
+        return [
+            EntityCandidate(
+                entity_id="entity:herb:白芍",
+                name="白芍",
+                label="Herb",
+                normalized_name="白芍",
+                source_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.9,
+            ),
+            EntityCandidate(
+                entity_id="entity:herb:白芍药",
+                name="白芍药",
+                label="Herb",
+                normalized_name="白芍药",
+                source_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.85,
+            ),
+            EntityCandidate(
+                entity_id="entity:function:养血敛阴",
+                name="养血敛阴",
+                label="Function",
+                normalized_name="养血敛阴",
+                source_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.8,
+            ),
+        ], [
+            RelationCandidate(
+                relation_id="relation:白芍:HAS_FUNCTION:养血敛阴",
+                source_entity_id="entity:herb:白芍",
+                target_entity_id="entity:function:养血敛阴",
+                relation="HAS_FUNCTION",
+                display="功效",
+                evidence_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.8,
+            ),
+            RelationCandidate(
+                relation_id="relation:白芍药:HAS_FUNCTION:养血敛阴",
+                source_entity_id="entity:herb:白芍药",
+                target_entity_id="entity:function:养血敛阴",
+                relation="HAS_FUNCTION",
+                display="功效",
+                evidence_chunk_ids=[chunks[0].chunk_id],
+                confidence=0.8,
+            ),
+        ]
+
+
+class ExplodingResolutionDecider:
+    def resolve_pairs(self, entity_type, pairs, nodes_by_name):
+        raise AssertionError("resolution decider should not be called when checkpoint exists")
 
 
 def test_build_generates_and_saves_subgraph_artifact_for_new_source():
@@ -292,6 +351,40 @@ def test_build_syncs_retrieval_kg_index_from_global_graph():
     assert reports
     assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
     assert retrieval_repository.get_graph_artifact("graph:global") is not None
+
+
+def test_build_replays_resolution_checkpoint_and_merges_entities():
+    ingestion_repository, retrieval_repository = _repositories()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+    checkpoint_key = resolution_checkpoint_key("Herb", [("白芍", "白芍药")])
+    retrieval_repository.save_graphrag_checkpoint(
+        RESOLUTION_CHECKPOINT,
+        checkpoint_key,
+        [["白芍", "白芍药"]],
+    )
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=AliasPairExtractor(),
+        entity_resolution_service=RagflowGraphEntityResolutionService(
+            decider=ExplodingResolutionDecider()
+        ),
+    ).build(["doc:a"])
+
+    global_artifact = retrieval_repository.get_graph_artifact("graph:global")
+    assert global_artifact is not None
+    assert summary.resolution_pairs_replayed == 1
+    assert summary.resolution_pairs_merged == 1
+    assert summary.global_nodes == 2
+    payload = json.loads(global_artifact.content_with_weight)
+    herb_nodes = [node for node in payload["nodes"] if node["label"] == "Herb"]
+    assert len(herb_nodes) == 1
+    assert herb_nodes[0]["name"] == "白芍"
+    assert herb_nodes[0]["properties"]["aliases"] == ["白芍药"]
+    assert len(payload["edges"]) == 1
+    assert payload["edges"][0]["source"] == "entity:herb:白芍"
 
 
 class FailingForDocBExtractor(FixedExtractor):

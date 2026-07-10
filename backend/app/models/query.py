@@ -72,4 +72,7 @@ class GraphBuildResponse(BaseModel):
     community_marker_cleared: bool
     resolution_marker_set: bool
     community_marker_set: bool
+    resolution_pairs_replayed: int = 0
+    resolution_pairs_resolved: int = 0
+    resolution_pairs_merged: int = 0
     graph_refreshed: bool

@@ -119,6 +119,9 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     assert body["global_nodes"] == 2
     assert body["resolution_marker_set"] is False
     assert body["community_marker_set"] is False
+    assert body["resolution_pairs_replayed"] == 0
+    assert body["resolution_pairs_resolved"] == 0
+    assert body["resolution_pairs_merged"] == 0
     assert body["graph_refreshed"] is True
     assert retrieval_repository.has_graphrag_phase_marker(PHASE_RESOLUTION) is False
     assert retrieval_repository.has_graphrag_phase_marker(PHASE_COMMUNITY) is False
