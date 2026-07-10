@@ -113,6 +113,14 @@ class RecordingCommunityClient:
         }
 
 
+class RecordingBackgroundTasks:
+    def __init__(self):
+        self.tasks = []
+
+    def add_task(self, fn, *args, **kwargs):
+        self.tasks.append((fn, args, kwargs))
+
+
 def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monkeypatch):
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -204,6 +212,77 @@ def test_graphrag_build_endpoint_builds_global_graph_and_refreshes_overview(monk
     assert run_body["metadata"]["retry_backoff_max_seconds"] == 4.0
     assert run_body["metadata"]["source_timeout_seconds"] == 10.0
     assert run_body["metadata"]["summary"]["global_nodes"] == 2
+    assert retrieval_repository.claim_graphrag_build_lock(
+        "graphrag:build:next",
+        started_at="2026-07-10T00:00:00Z",
+        metadata={},
+    )
+
+
+def test_graphrag_build_async_endpoint_submits_background_run(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    ingestion_repository = IngestionRepository(engine)
+    retrieval_repository = RagflowRetrievalRepository(engine)
+    ingestion_repository.upsert_source(
+        SourceManifest(
+            source_id="doc:a",
+            filename="doc:a.txt",
+            mime_type="text/plain",
+            checksum="checksum:doc:a",
+            status="parsed",
+        )
+    )
+    ingestion_repository.replace_pages_and_chunks(
+        "doc:a",
+        [],
+        [
+            DocumentChunk(
+                chunk_id="chunk:doc:a:1",
+                source_id="doc:a",
+                page_id="page:doc:a:1",
+                chunk_index=0,
+                content="白芍可养血敛阴。",
+                content_type="text",
+                token_count=8,
+            )
+        ],
+    )
+    question_service = routes.QuestionService.demo()
+    monkeypatch.setattr(routes, "ingestion_repository", ingestion_repository)
+    monkeypatch.setattr(routes, "ragflow_repository", retrieval_repository)
+    monkeypatch.setattr(routes, "question_service", question_service)
+    monkeypatch.setattr(routes, "GraphExtractor", lambda llm_extractor=None: FixedRouteExtractor())
+    background_tasks = RecordingBackgroundTasks()
+
+    response = routes.build_ragflow_graphrag_async(
+        background_tasks,
+        routes.GraphBuildRequest(
+            source_ids=["doc:a"],
+            with_resolution=False,
+            with_community=False,
+        ),
+    )
+
+    assert response.status == "running"
+    assert response.processed == 0
+    assert response.metadata["execution_mode"] == "background"
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is None
+    assert len(background_tasks.tasks) == 1
+
+    task_fn, args, kwargs = background_tasks.tasks[0]
+    task_fn(*args, **kwargs)
+
+    completed = retrieval_repository.get_graphrag_build_run(response.run_id)
+    assert completed is not None
+    assert completed.status == "completed"
+    assert completed.processed == 1
+    assert completed.metadata["execution_mode"] == "background"
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
     assert retrieval_repository.claim_graphrag_build_lock(
         "graphrag:build:next",
         started_at="2026-07-10T00:00:00Z",

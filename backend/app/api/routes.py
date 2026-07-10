@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 
 import httpx
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 
 from app.core.config import get_settings
 from app.models.graph import GraphEdge, GraphNode
@@ -242,21 +242,7 @@ def rebuild_ragflow_retrieval_index() -> dict:
 def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBuildResponse:
     request = request or GraphBuildRequest()
     try:
-        summary = RagflowGraphBuildService(
-            ingestion_repository=ingestion_repository,
-            retrieval_repository=ragflow_repository,
-            graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
-            entity_resolution_service=RagflowGraphEntityResolutionService(
-                decider=LlmEntityResolutionDecider(structured_extractor)
-            ),
-            community_report_service=RagflowGraphCommunityReportService(
-                report_client=structured_extractor
-            ),
-            retry_attempts=request.retry_attempts,
-            retry_backoff_seconds=request.retry_backoff_seconds,
-            retry_backoff_max_seconds=request.retry_backoff_max_seconds,
-            source_timeout_seconds=request.source_timeout_seconds,
-        ).build(
+        summary = _graphrag_build_service(request).build(
             request.source_ids,
             with_resolution=request.with_resolution,
             with_community=request.with_community,
@@ -269,6 +255,52 @@ def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBui
         graph_refreshed=graph_refreshed,
         **asdict(summary),
     )
+
+
+@router.post("/retrieval/graphrag/build/async", response_model=GraphBuildRunResponse)
+def build_ragflow_graphrag_async(
+    background_tasks: BackgroundTasks,
+    request: GraphBuildRequest | None = None,
+) -> GraphBuildRunResponse:
+    request = request or GraphBuildRequest()
+    service = _graphrag_build_service(request)
+    try:
+        submission = service.submit(
+            request.source_ids,
+            with_resolution=request.with_resolution,
+            with_community=request.with_community,
+            execution_mode="background",
+        )
+    except RagflowGraphBuildAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background_tasks.add_task(_run_ragflow_graphrag_background, service, submission)
+    return GraphBuildRunResponse(**asdict(submission.run))
+
+
+def _graphrag_build_service(request: GraphBuildRequest) -> RagflowGraphBuildService:
+    return RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=ragflow_repository,
+        graph_extractor=GraphExtractor(llm_extractor=structured_extractor),
+        entity_resolution_service=RagflowGraphEntityResolutionService(
+            decider=LlmEntityResolutionDecider(structured_extractor)
+        ),
+        community_report_service=RagflowGraphCommunityReportService(
+            report_client=structured_extractor
+        ),
+        retry_attempts=request.retry_attempts,
+        retry_backoff_seconds=request.retry_backoff_seconds,
+        retry_backoff_max_seconds=request.retry_backoff_max_seconds,
+        source_timeout_seconds=request.source_timeout_seconds,
+    )
+
+
+def _run_ragflow_graphrag_background(service, submission) -> None:
+    try:
+        service.run_submitted(submission)
+        _refresh_question_graph_from_ragflow_global_artifact()
+    except Exception:
+        return
 
 
 @router.get("/retrieval/graphrag/runs/{run_id}", response_model=GraphBuildRunResponse)

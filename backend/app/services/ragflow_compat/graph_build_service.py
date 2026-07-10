@@ -45,6 +45,14 @@ class RagflowGraphBuildSummary:
     source_events: list[dict] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class RagflowGraphBuildSubmission:
+    run: RetrievalGraphRagBuildRun
+    source_ids: list[str]
+    with_resolution: bool
+    with_community: bool
+
+
 class RagflowGraphBuildAlreadyRunningError(RuntimeError):
     pass
 
@@ -97,42 +105,65 @@ class RagflowGraphBuildService:
         with_resolution: bool = True,
         with_community: bool = True,
     ) -> RagflowGraphBuildSummary:
+        submission = self.submit(
+            source_ids,
+            with_resolution=with_resolution,
+            with_community=with_community,
+            execution_mode="sync",
+        )
+        return self.run_submitted(submission)
+
+    def submit(
+        self,
+        source_ids: list[str] | None = None,
+        *,
+        with_resolution: bool = True,
+        with_community: bool = True,
+        execution_mode: str = "sync",
+    ) -> RagflowGraphBuildSubmission:
         run_id = f"graphrag:build:{uuid4().hex}"
         started_at = _utc_now()
         selected_source_ids = self._source_ids(source_ids)
+        metadata = self._run_metadata(
+            source_ids=selected_source_ids,
+            with_resolution=with_resolution,
+            with_community=with_community,
+            execution_mode=execution_mode,
+        )
         if not self.retrieval_repository.claim_graphrag_build_lock(
             run_id,
             started_at=started_at,
-            metadata={
-                "source_ids": selected_source_ids,
-                "with_resolution": with_resolution,
-                "with_community": with_community,
-                "retry_attempts": self.retry_attempts,
-                "retry_backoff_seconds": self.retry_backoff_seconds,
-                "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
-                "source_timeout_seconds": self.source_timeout_seconds,
-            },
+            metadata=metadata,
         ):
             raise RagflowGraphBuildAlreadyRunningError("GraphRAG build is already running")
+        run = RetrievalGraphRagBuildRun(
+            run_id=run_id,
+            status="running",
+            started_at=started_at,
+            finished_at="",
+            total=len(selected_source_ids),
+            processed=0,
+            failed=0,
+            metadata=metadata,
+        )
+        self.retrieval_repository.save_graphrag_build_run(run)
+        return RagflowGraphBuildSubmission(
+            run=run,
+            source_ids=selected_source_ids,
+            with_resolution=with_resolution,
+            with_community=with_community,
+        )
+
+    def run_submitted(
+        self,
+        submission: RagflowGraphBuildSubmission,
+    ) -> RagflowGraphBuildSummary:
+        run_id = submission.run.run_id
+        started_at = submission.run.started_at
+        selected_source_ids = submission.source_ids
+        with_resolution = submission.with_resolution
+        with_community = submission.with_community
         try:
-            self._save_build_run(
-                run_id=run_id,
-                status="running",
-                started_at=started_at,
-                finished_at="",
-                total=len(selected_source_ids),
-                processed=0,
-                failed=0,
-                metadata={
-                    "source_ids": selected_source_ids,
-                    "with_resolution": with_resolution,
-                    "with_community": with_community,
-                    "retry_attempts": self.retry_attempts,
-                    "retry_backoff_seconds": self.retry_backoff_seconds,
-                    "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
-                    "source_timeout_seconds": self.source_timeout_seconds,
-                },
-            )
             try:
                 summary = self._build_selected_sources(
                     run_id=run_id,
@@ -166,13 +197,14 @@ class RagflowGraphBuildService:
                     processed=0,
                     failed=1,
                     metadata={
-                        "source_ids": selected_source_ids,
-                        "with_resolution": with_resolution,
-                        "with_community": with_community,
-                        "retry_attempts": self.retry_attempts,
-                        "retry_backoff_seconds": self.retry_backoff_seconds,
-                        "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
-                        "source_timeout_seconds": self.source_timeout_seconds,
+                        **self._run_metadata(
+                            source_ids=selected_source_ids,
+                            with_resolution=with_resolution,
+                            with_community=with_community,
+                            execution_mode=submission.run.metadata.get(
+                                "execution_mode", "sync"
+                            ),
+                        ),
                         "error": repr(exc),
                     },
                 )
@@ -186,13 +218,14 @@ class RagflowGraphBuildService:
                 processed=summary.sources_total,
                 failed=summary.sources_failed,
                 metadata={
-                    "source_ids": selected_source_ids,
-                    "with_resolution": with_resolution,
-                    "with_community": with_community,
-                    "retry_attempts": self.retry_attempts,
-                    "retry_backoff_seconds": self.retry_backoff_seconds,
-                    "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
-                    "source_timeout_seconds": self.source_timeout_seconds,
+                    **self._run_metadata(
+                        source_ids=selected_source_ids,
+                        with_resolution=with_resolution,
+                        with_community=with_community,
+                        execution_mode=submission.run.metadata.get(
+                            "execution_mode", "sync"
+                        ),
+                    ),
                     "summary": asdict(summary),
                     "source_events": summary.source_events,
                 },
@@ -200,6 +233,25 @@ class RagflowGraphBuildService:
             return summary
         finally:
             self.retrieval_repository.release_graphrag_build_lock(run_id)
+
+    def _run_metadata(
+        self,
+        *,
+        source_ids: list[str],
+        with_resolution: bool,
+        with_community: bool,
+        execution_mode: str,
+    ) -> dict:
+        return {
+            "source_ids": source_ids,
+            "with_resolution": with_resolution,
+            "with_community": with_community,
+            "retry_attempts": self.retry_attempts,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+            "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
+            "source_timeout_seconds": self.source_timeout_seconds,
+            "execution_mode": execution_mode,
+        }
 
     def _build_selected_sources(
         self,
@@ -484,6 +536,8 @@ class RagflowGraphBuildService:
         failed: int,
         source_events: list[dict],
     ) -> None:
+        current_run = self.retrieval_repository.get_graphrag_build_run(run_id)
+        current_metadata = current_run.metadata if current_run else {}
         metadata = {
             "source_ids": selected_source_ids,
             "with_resolution": with_resolution,
@@ -492,10 +546,11 @@ class RagflowGraphBuildService:
             "retry_backoff_seconds": self.retry_backoff_seconds,
             "retry_backoff_max_seconds": self.retry_backoff_max_seconds,
             "source_timeout_seconds": self.source_timeout_seconds,
+            "execution_mode": current_metadata.get("execution_mode", "sync"),
             "current_source_id": current_source_id,
             "source_events": list(source_events),
         }
-        if self.retrieval_repository.is_graphrag_build_cancel_requested(run_id):
+        if current_metadata.get("cancel_requested"):
             metadata["cancel_requested"] = True
         self._save_build_run(
             run_id=run_id,
