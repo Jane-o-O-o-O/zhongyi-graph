@@ -95,3 +95,7 @@ class GraphBuildRunResponse(BaseModel):
     processed: int = 0
     failed: int = 0
     metadata: dict = Field(default_factory=dict)
+
+
+class GraphBuildRunsResponse(BaseModel):
+    runs: list[GraphBuildRunResponse] = Field(default_factory=list)

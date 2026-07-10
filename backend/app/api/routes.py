@@ -12,6 +12,7 @@ from app.models.ingestion import IngestionJob, SourceManifest
 from app.models.query import (
     GraphBuildRequest,
     GraphBuildRunResponse,
+    GraphBuildRunsResponse,
     GraphBuildResponse,
     GraphOverviewResponse,
     QueryRequest,
@@ -276,6 +277,14 @@ def get_ragflow_graphrag_run(run_id: str) -> GraphBuildRunResponse:
     if not run:
         raise HTTPException(status_code=404, detail="GraphRAG build run not found")
     return GraphBuildRunResponse(**asdict(run))
+
+
+@router.get("/retrieval/graphrag/runs", response_model=GraphBuildRunsResponse)
+def list_ragflow_graphrag_runs(limit: int = 20) -> GraphBuildRunsResponse:
+    runs = ragflow_repository.list_graphrag_build_runs(limit=limit)
+    return GraphBuildRunsResponse(
+        runs=[GraphBuildRunResponse(**asdict(run)) for run in runs]
+    )
 
 
 @router.post("/retrieval/graphrag/runs/{run_id}/cancel")

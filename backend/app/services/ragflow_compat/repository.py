@@ -257,6 +257,24 @@ class RagflowRetrievalRepository:
                 return None
             return _graphrag_build_run_from_row(row._mapping)
 
+    def list_graphrag_build_runs(self, *, limit: int = 20) -> list[RetrievalGraphRagBuildRun]:
+        bounded_limit = min(max(limit, 1), 100)
+        statement = (
+            select(retrieval_sync_state_table)
+            .where(retrieval_sync_state_table.c.sync_key.like("graphrag:build:%"))
+            .where(retrieval_sync_state_table.c.sync_key != GRAPHRAG_BUILD_LOCK_KEY)
+            .order_by(
+                retrieval_sync_state_table.c.started_at.desc(),
+                retrieval_sync_state_table.c.sync_key.desc(),
+            )
+            .limit(bounded_limit)
+        )
+        with self.engine.begin() as connection:
+            return [
+                _graphrag_build_run_from_row(row._mapping)
+                for row in connection.execute(statement)
+            ]
+
     def claim_graphrag_build_lock(
         self,
         run_id: str,

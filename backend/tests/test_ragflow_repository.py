@@ -307,6 +307,43 @@ def test_repository_marks_graphrag_build_run_cancel_requested():
     assert canceled.metadata["cancel_requested"] is True
 
 
+def test_repository_lists_graphrag_build_runs_excluding_lock_by_recency():
+    repository = _repository()
+    repository.save_graphrag_build_run(
+        RetrievalGraphRagBuildRun(
+            run_id="graphrag:build:old",
+            status="completed",
+            started_at="2026-07-10T00:00:00Z",
+            finished_at="2026-07-10T00:00:10Z",
+            total=1,
+            processed=1,
+            metadata={"source_ids": ["doc:old"]},
+        )
+    )
+    repository.save_graphrag_build_run(
+        RetrievalGraphRagBuildRun(
+            run_id="graphrag:build:new",
+            status="running",
+            started_at="2026-07-10T00:01:00Z",
+            total=2,
+            processed=1,
+            metadata={"source_ids": ["doc:new"]},
+        )
+    )
+    repository.claim_graphrag_build_lock(
+        "graphrag:build:new",
+        started_at="2026-07-10T00:01:00Z",
+        metadata={},
+    )
+
+    runs = repository.list_graphrag_build_runs(limit=10)
+
+    assert [run.run_id for run in runs] == ["graphrag:build:new", "graphrag:build:old"]
+    assert [run.run_id for run in repository.list_graphrag_build_runs(limit=1)] == [
+        "graphrag:build:new"
+    ]
+
+
 def test_repository_audit_counts_vectors_and_chunk_lengths():
     repository = _repository()
     repository.replace_documents(

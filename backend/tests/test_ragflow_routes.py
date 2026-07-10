@@ -339,6 +339,45 @@ def test_graphrag_build_cancel_endpoint_marks_running_run(monkeypatch):
     assert run_response.json()["metadata"]["cancel_requested"] is True
 
 
+def test_graphrag_build_runs_endpoint_lists_recent_runs(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    retrieval_repository = RagflowRetrievalRepository(engine)
+    retrieval_repository.save_graphrag_build_run(
+        RetrievalGraphRagBuildRun(
+            run_id="graphrag:build:old",
+            status="completed",
+            started_at="2026-07-10T00:00:00Z",
+            total=1,
+            processed=1,
+            metadata={"source_ids": ["doc:old"]},
+        )
+    )
+    retrieval_repository.save_graphrag_build_run(
+        RetrievalGraphRagBuildRun(
+            run_id="graphrag:build:new",
+            status="running",
+            started_at="2026-07-10T00:01:00Z",
+            total=2,
+            processed=1,
+            metadata={"source_ids": ["doc:new"]},
+        )
+    )
+    monkeypatch.setattr(routes, "ragflow_repository", retrieval_repository)
+
+    response = TestClient(app).get("/api/retrieval/graphrag/runs", params={"limit": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [run["run_id"] for run in body["runs"]] == ["graphrag:build:new"]
+    assert body["runs"][0]["status"] == "running"
+    assert body["runs"][0]["metadata"]["source_ids"] == ["doc:new"]
+
+
 def test_graphrag_build_endpoint_uses_llm_community_report_client(monkeypatch):
     engine = create_engine(
         "sqlite+pysqlite://",
