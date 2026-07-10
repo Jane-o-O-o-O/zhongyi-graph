@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import inspect
 
 from app.models.query import QueryResponse
 from app.services.llm import LlmClient
@@ -19,18 +20,27 @@ class RagflowCompatibleRetrievalService:
         fulltext_retriever: RagflowFulltextRetriever,
         kg_search: RagflowKgSearch,
         llm_client: LlmClient,
+        query_rewriter=None,
         qdrant_stats_provider: Callable[[], dict] | None = None,
     ):
         self.repository = repository
         self.fulltext_retriever = fulltext_retriever
         self.kg_search = kg_search
         self.llm_client = llm_client
+        self.query_rewriter = query_rewriter
         self.qdrant_stats_provider = qdrant_stats_provider
 
     def answer(self, question: str, *, comm_topn: int = 1) -> QueryResponse:
         fulltext = self.fulltext_retriever.retrieve(question, top_k=8)
-        answer_type_keywords = _infer_answer_types(question)
-        entities_from_query = _entities_from_keywords(fulltext.keywords)
+        fallback_answer_types = _infer_answer_types(question)
+        fallback_entities = _entities_from_keywords(fulltext.keywords)
+        rewrite = _query_rewrite(
+            self.query_rewriter,
+            question,
+            type_pool=_type_pool(self.repository),
+        )
+        answer_type_keywords = rewrite["answer_type_keywords"] or fallback_answer_types
+        entities_from_query = rewrite["entities_from_query"] or fallback_entities
         kg = self.kg_search.retrieve(
             question,
             answer_type_keywords=answer_type_keywords,
@@ -64,6 +74,7 @@ class RagflowCompatibleRetrievalService:
             evidence=evidence,
             diagnostics={
                 "retrieval_engine": "ragflow_compat",
+                "query_rewrite_source": rewrite["source"],
                 "keywords": fulltext.keywords,
                 "answer_type_keywords": answer_type_keywords,
                 "entities_from_query": entities_from_query,
@@ -139,6 +150,44 @@ def _entities_from_keywords(keywords: list[str]) -> list[str]:
     return entity_keywords(keywords)
 
 
+def _query_rewrite(query_rewriter, question: str, *, type_pool: dict[str, list[str]]) -> dict:
+    if not query_rewriter:
+        return {"source": "rules", "answer_type_keywords": [], "entities_from_query": []}
+    try:
+        payload = _call_query_rewriter(query_rewriter, question, type_pool)
+    except Exception:
+        return {"source": "rules", "answer_type_keywords": [], "entities_from_query": []}
+    if not isinstance(payload, dict):
+        return {"source": "rules", "answer_type_keywords": [], "entities_from_query": []}
+    answer_type_keywords = _string_list(payload.get("answer_type_keywords"))[:3]
+    entities_from_query = _string_list(payload.get("entities_from_query"))[:5]
+    if not entities_from_query:
+        entities_from_query = _string_list(payload.get("entities"))[:5]
+    if not answer_type_keywords and not entities_from_query:
+        return {"source": "rules", "answer_type_keywords": [], "entities_from_query": []}
+    return {
+        "source": "llm",
+        "answer_type_keywords": answer_type_keywords,
+        "entities_from_query": entities_from_query,
+    }
+
+
+def _call_query_rewriter(query_rewriter, question: str, type_pool: dict[str, list[str]]) -> dict:
+    extract_query = query_rewriter.extract_query
+    signature = inspect.signature(extract_query)
+    if "type_pool" in signature.parameters:
+        return extract_query(question, type_pool=type_pool)
+    return extract_query(question)
+
+
+def _type_pool(repository: RagflowRetrievalRepository) -> dict[str, list[str]]:
+    return {
+        sample.entity_type: sample.sample_entities
+        for sample in repository.list_type_samples()
+        if sample.sample_entities
+    }
+
+
 def _infer_intent(question: str) -> str:
     if any(term in question for term in ["汤", "方", "方剂"]):
         return "formula_inquiry"
@@ -165,6 +214,12 @@ def _unique(values) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
+
+
+def _string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return _unique(str(item).strip() for item in value if str(item).strip())
 
 
 def _postgres_embedded_points(audit) -> int:

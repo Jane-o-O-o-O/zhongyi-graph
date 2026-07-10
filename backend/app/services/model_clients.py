@@ -167,7 +167,25 @@ class StructuredExtractionClient:
         )
         return _normalize_batch_extraction_payload(payload)
 
-    def extract_query(self, question: str) -> dict:
+    def extract_query(self, question: str, type_pool: dict[str, list[str]] | None = None) -> dict:
+        if type_pool is not None:
+            return self._chat_json(
+                system=(
+                    "/no_think 你是 GraphRAG 查询改写器。"
+                    "给定用户问题和 Answer type pool，输出适合知识图谱检索的 JSON。"
+                    "answer_type_keywords 必须从 Answer type pool 的类型中选择，最多 3 个，"
+                    "按可能性从高到低排列。"
+                    "entities_from_query 只放用户问题中明确出现或直接同义标准化的具体实体、细节和术语，最多 5 个。"
+                    "只输出 JSON，格式为："
+                    "{\"answer_type_keywords\":[\"Formula\"],"
+                    "\"entities_from_query\":[\"失眠\",\"归脾汤\"]}。"
+                ),
+                user=(
+                    "/no_think 问题："
+                    f"{question}\nAnswer type pool："
+                    + json.dumps(type_pool, ensure_ascii=False)
+                ),
+            )
         return self._chat_json(
             system=(
                 "/no_think 你是中医知识图谱查询理解器。"

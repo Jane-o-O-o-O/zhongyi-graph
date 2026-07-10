@@ -138,6 +138,51 @@ def test_structured_extraction_client_query_prompt_requests_expanded_entities():
     assert "衍生" in captured["system"]
 
 
+def test_structured_extraction_client_extracts_ragflow_query_rewrite_with_type_pool():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read().decode("utf-8"))
+        captured["system"] = payload["messages"][0]["content"]
+        captured["user"] = payload["messages"][1]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer_type_keywords": ["Formula"],
+                                    "entities_from_query": ["失眠", "归脾汤"],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = StructuredExtractionClient(
+        base_url="https://api.siliconflow.cn/v1",
+        api_key="secret",
+        model="nclusionAI/Ling-flash-2.0",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    extracted = client.extract_query(
+        "睡不着用什么方？",
+        type_pool={"Formula": ["归脾汤"], "Syndrome": ["心脾两虚"]},
+    )
+
+    assert extracted["answer_type_keywords"] == ["Formula"]
+    assert extracted["entities_from_query"] == ["失眠", "归脾汤"]
+    assert "answer_type_keywords" in captured["system"]
+    assert "entities_from_query" in captured["system"]
+    assert '"Formula": ["归脾汤"]' in captured["user"]
+
+
 def test_structured_extraction_client_extracts_units_in_one_batch_request():
     captured = {}
 

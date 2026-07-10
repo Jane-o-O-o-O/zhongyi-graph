@@ -146,6 +146,7 @@ ragflow_retrieval_service = RagflowCompatibleRetrievalService(
     ),
     kg_search=RagflowKgSearch(ragflow_doc_store),
     llm_client=question_service.llm_client,
+    query_rewriter=structured_extractor,
     qdrant_stats_provider=lambda: _qdrant_collection_stats(
         settings.qdrant_url,
         settings.ragflow_qdrant_collection,
