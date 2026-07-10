@@ -12,6 +12,7 @@ from app.models.graph import GraphEdge, GraphNode
 from app.services.ingestion_repository import IngestionRepository
 from app.services.graph_service import GraphService
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
+from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
 from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
 
 
@@ -107,6 +108,29 @@ def test_sync_service_rebuilds_documents_chunks_entities_relations_from_existing
     assert synced_relation.from_entity_kwd == "失眠"
     assert synced_relation.to_entity_kwd == "心脾两虚"
     assert synced_relation.weight_int == 1
+
+
+def test_sync_service_can_preserve_graph_artifacts_when_requested():
+    ingestion_repository, retrieval_repository = _shared_repositories()
+    retrieval_repository.save_graph_artifact(
+        RetrievalGraphArtifact(
+            artifact_id="subgraph:doc:a",
+            artifact_type="subgraph",
+            content_with_weight='{"nodes":[],"edges":[]}',
+            source_id=["doc:a"],
+            node_count=0,
+            edge_count=0,
+        )
+    )
+
+    summary = RagflowRetrievalSyncService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        write_graph_artifacts=False,
+    ).rebuild_from_ingestion()
+
+    assert summary["graph_artifacts"] == 0
+    assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
 
 
 def test_sync_service_streams_chunks_in_batches_without_full_chunk_list():

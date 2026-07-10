@@ -62,18 +62,20 @@ class RagflowRetrievalRepository:
     def replace_chunk_terms(self, terms: list) -> None:
         self._replace_all(retrieval_chunk_terms_table, [_row(term) for term in terms])
 
-    def clear_rebuild_tables(self) -> None:
+    def clear_rebuild_tables(self, *, include_graph_artifacts: bool = True) -> None:
         with self.engine.begin() as connection:
-            for table in [
+            tables = [
                 retrieval_chunk_terms_table,
                 retrieval_chunks_table,
                 retrieval_documents_table,
                 retrieval_kg_entities_table,
                 retrieval_kg_relations_table,
                 retrieval_kg_community_reports_table,
-                retrieval_kg_graph_artifacts_table,
                 retrieval_kg_type_samples_table,
-            ]:
+            ]
+            if include_graph_artifacts:
+                tables.append(retrieval_kg_graph_artifacts_table)
+            for table in tables:
                 connection.execute(delete(table))
 
     def append_documents(self, documents: list[RetrievalDocument]) -> None:

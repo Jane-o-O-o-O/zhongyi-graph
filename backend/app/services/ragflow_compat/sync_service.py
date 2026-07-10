@@ -42,6 +42,7 @@ class RagflowRetrievalSyncService:
         chunk_batch_size: int = 1000,
         build_chunk_terms: bool = False,
         graph_service: GraphService | None = None,
+        write_graph_artifacts: bool = True,
     ):
         self.ingestion_repository = ingestion_repository
         self.retrieval_repository = retrieval_repository
@@ -50,6 +51,7 @@ class RagflowRetrievalSyncService:
         self.chunk_batch_size = chunk_batch_size
         self.build_chunk_terms = build_chunk_terms
         self.graph_service = graph_service
+        self.write_graph_artifacts = write_graph_artifacts
 
     def rebuild_from_ingestion(self) -> dict[str, int]:
         sources = self.ingestion_repository.list_sources()
@@ -85,6 +87,8 @@ class RagflowRetrievalSyncService:
             )
             community_reports = self._community_reports_from_graph(self.graph_service)
             graph_artifacts = self._graph_artifacts_from_graph(self.graph_service)
+            if not self.write_graph_artifacts:
+                graph_artifacts = []
         else:
             retrieval_entities = [
                 self._entity_from_candidate(source_id, entity)
@@ -98,7 +102,9 @@ class RagflowRetrievalSyncService:
             graph_artifacts = []
         retrieval_type_samples = self._type_samples(retrieval_entities)
 
-        self.retrieval_repository.clear_rebuild_tables()
+        self.retrieval_repository.clear_rebuild_tables(
+            include_graph_artifacts=self.write_graph_artifacts
+        )
         self.retrieval_repository.append_documents(retrieval_documents)
         chunk_count = 0
         for chunk_batch in self.ingestion_repository.iter_chunk_batches(self.chunk_batch_size):
