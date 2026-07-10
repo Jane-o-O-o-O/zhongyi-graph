@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import csv
 import inspect
+import io
+import json
 
 from app.models.query import QueryResponse
 from app.services.llm import LlmClient
@@ -48,10 +51,8 @@ class RagflowCompatibleRetrievalService:
             comm_topn=comm_topn,
         )
         evidence = assemble_evidence_cards(fulltext.hits, kg.graph_edges)
-        community_evidence = [
-            report.summary or report.content_with_weight
-            for report in kg.community_reports
-        ]
+        kg_context = _build_kg_context(kg)
+        kg_evidence = [kg_context] if kg_context else []
         entities = _unique([entity.entity for entity in kg.entities] + entities_from_query)
         graph_paths = [
             f"{edge.source} -> {edge.display} -> {edge.target}"
@@ -60,7 +61,7 @@ class RagflowCompatibleRetrievalService:
         answer = self.llm_client.synthesize(
             question=question,
             entities=entities,
-            evidence=[card.snippet for card in evidence] + community_evidence,
+            evidence=[card.snippet for card in evidence] + kg_evidence,
             graph_paths=graph_paths,
         )
         return QueryResponse(
@@ -82,6 +83,8 @@ class RagflowCompatibleRetrievalService:
                 "kg_entities": len(kg.entities),
                 "kg_relations": len(kg.relations),
                 "community_reports": len(kg.community_reports),
+                "kg_context_docnm": "Related content in Knowledge Graph",
+                "kg_context": kg_context,
             },
         )
 
@@ -148,6 +151,92 @@ def _infer_answer_types(question: str) -> list[str]:
 
 def _entities_from_keywords(keywords: list[str]) -> list[str]:
     return entity_keywords(keywords)
+
+
+def _build_kg_context(kg, *, max_token: int = 8196) -> str:
+    remaining = max(0, int(max_token))
+    sections: list[str] = []
+    entity_rows: list[dict[str, str]] = []
+    for entity in kg.entities:
+        row = {
+            "Entity": entity.entity,
+            "Score": f"{entity.score:.2f}",
+            "Description": _description_text(entity.description),
+        }
+        row_tokens = _context_token_count(str(row))
+        if entity_rows and remaining - row_tokens <= 0:
+            break
+        remaining -= row_tokens
+        entity_rows.append(row)
+    if entity_rows:
+        sections.append("\n---- Entities ----\n" + _csv_rows(["Entity", "Score", "Description"], entity_rows))
+
+    relation_rows: list[dict[str, str]] = []
+    for relation in kg.relations:
+        row = {
+            "From Entity": relation.from_entity,
+            "To Entity": relation.to_entity,
+            "Score": f"{relation.score:.2f}",
+            "Description": _description_text(relation.description),
+        }
+        row_tokens = _context_token_count(str(row))
+        if relation_rows and remaining - row_tokens <= 0:
+            break
+        remaining -= row_tokens
+        relation_rows.append(row)
+    if relation_rows:
+        sections.append(
+            "\n---- Relations ----\n"
+            + _csv_rows(["From Entity", "To Entity", "Score", "Description"], relation_rows)
+        )
+
+    community_texts: list[str] = []
+    for index, report in enumerate(kg.community_reports, start=1):
+        report_text = _community_report_text(index, report)
+        report_tokens = _context_token_count(report_text)
+        if community_texts and remaining - report_tokens <= 0:
+            break
+        remaining -= report_tokens
+        community_texts.append(report_text)
+    if community_texts:
+        sections.append("\n---- Community Report ----\n" + "\n".join(community_texts))
+
+    return "".join(sections)
+
+
+def _csv_rows(fieldnames: list[str], rows: list[dict[str, str]]) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    return buffer.getvalue()
+
+
+def _community_report_text(index: int, report) -> str:
+    report_content = report.summary or report.content_with_weight
+    evidences = report.evidences
+    try:
+        parsed = json.loads(report.content_with_weight)
+    except (TypeError, json.JSONDecodeError):
+        parsed = {}
+    if isinstance(parsed, dict):
+        report_content = str(parsed.get("report") or parsed.get("summary") or report_content)
+        evidences = str(parsed.get("evidences") or evidences)
+    return f"# {index}. {report.title}\n## Content\n{report_content}\n## Evidences\n{evidences}\n"
+
+
+def _description_text(value: str) -> str:
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return value
+    if isinstance(parsed, dict):
+        return str(parsed.get("description") or value)
+    return value
+
+
+def _context_token_count(value: str) -> int:
+    return max(1, len(value))
 
 
 def _query_rewrite(query_rewriter, question: str, *, type_pool: dict[str, list[str]]) -> dict:

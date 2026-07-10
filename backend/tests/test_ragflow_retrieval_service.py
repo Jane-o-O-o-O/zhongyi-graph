@@ -122,6 +122,16 @@ def test_ragflow_compatible_retrieval_service_returns_query_response_with_diagno
     assert response.diagnostics["retrieval_engine"] == "ragflow_compat"
     assert response.diagnostics["chunk_hits"] == 1
     assert response.diagnostics["community_reports"] == 1
+    assert response.diagnostics["kg_context_docnm"] == "Related content in Knowledge Graph"
+    kg_context = response.diagnostics["kg_context"]
+    assert "---- Entities ----" in kg_context
+    assert "Entity,Score,Description" in kg_context
+    assert "失眠" in kg_context
+    assert "---- Relations ----" in kg_context
+    assert "From Entity,To Entity,Score,Description" in kg_context
+    assert "可辨为" in kg_context
+    assert "---- Community Report ----" in kg_context
+    assert "失眠社区摘要" in kg_context
 
 
 def test_ragflow_compatible_retrieval_service_honors_community_report_topn():
