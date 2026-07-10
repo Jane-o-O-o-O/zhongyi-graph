@@ -51,9 +51,9 @@ def _source(source_id: str = "doc:a") -> SourceManifest:
     )
 
 
-def _chunk(source_id: str = "doc:a", chunk_id: str = "chunk:doc:a:1") -> DocumentChunk:
+def _chunk(source_id: str = "doc:a", chunk_id: str | None = None) -> DocumentChunk:
     return DocumentChunk(
-        chunk_id=chunk_id,
+        chunk_id=chunk_id or f"chunk:{source_id}:1",
         source_id=source_id,
         page_id=f"page:{source_id}:1",
         chunk_index=0,
@@ -163,3 +163,27 @@ def test_build_generates_and_saves_subgraph_artifact_for_new_source():
     payload = json.loads(artifact.content_with_weight)
     assert {node["name"] for node in payload["nodes"]} == {"白芍", "养血敛阴"}
     assert payload["edges"][0]["relation"] == "HAS_FUNCTION"
+
+
+def test_build_merges_available_subgraphs_into_global_graph_artifact():
+    ingestion_repository, retrieval_repository = _repositories()
+    for source_id in ["doc:a", "doc:b"]:
+        ingestion_repository.upsert_source(_source(source_id))
+        ingestion_repository.replace_pages_and_chunks(source_id, [], [_chunk(source_id)])
+    extractor = FixedExtractor()
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=extractor,
+    ).build(["doc:a", "doc:b"])
+
+    global_artifact = retrieval_repository.get_graph_artifact("graph:global")
+    assert global_artifact is not None
+    assert summary.subgraphs_merged == 2
+    assert summary.global_nodes == 2
+    assert summary.global_edges == 1
+    assert global_artifact.source_id == ["doc:a", "doc:b"]
+    payload = json.loads(global_artifact.content_with_weight)
+    assert {node["name"] for node in payload["nodes"]} == {"白芍", "养血敛阴"}
+    assert len(payload["edges"]) == 1

@@ -59,11 +59,21 @@ class RagflowGraphBuildService:
                 continue
             self.retrieval_repository.save_graph_artifact(_subgraph_artifact(source_id, nodes, edges))
             built += 1
+        merged_nodes, merged_edges, merged_sources = _merge_subgraph_artifacts(
+            self.retrieval_repository.list_graph_artifacts(available_only=True)
+        )
+        if merged_nodes or merged_edges:
+            self.retrieval_repository.save_graph_artifact(
+                _global_graph_artifact(merged_nodes, merged_edges, merged_sources)
+            )
         return RagflowGraphBuildSummary(
             sources_total=len(selected_source_ids),
             sources_skipped=skipped,
             sources_built=built,
             sources_failed=failed,
+            subgraphs_merged=len(merged_sources),
+            global_nodes=len(merged_nodes),
+            global_edges=len(merged_edges),
             graph_changed=built > 0,
         )
 
@@ -130,3 +140,65 @@ def _graph_payload(nodes: list[GraphNode], edges: list[GraphEdge]) -> dict:
         "nodes": [node.model_dump() for node in nodes],
         "edges": [edge.model_dump() for edge in edges],
     }
+
+
+def _merge_subgraph_artifacts(artifacts) -> tuple[list[GraphNode], list[GraphEdge], list[str]]:
+    nodes_by_id: dict[str, GraphNode] = {}
+    edges_by_id: dict[str, GraphEdge] = {}
+    merged_sources: set[str] = set()
+    for artifact in sorted(artifacts, key=lambda item: item.artifact_id):
+        if artifact.artifact_type != "subgraph" or artifact.available_int != 1:
+            continue
+        payload = json.loads(artifact.content_with_weight)
+        merged_sources.update(str(source_id) for source_id in artifact.source_id)
+        for node_data in payload.get("nodes", []):
+            node = GraphNode.model_validate(node_data)
+            existing = nodes_by_id.get(node.id)
+            if existing:
+                node = _merge_node(existing, node)
+            nodes_by_id[node.id] = node
+        for edge_data in payload.get("edges", []):
+            edge = GraphEdge.model_validate(edge_data)
+            existing = edges_by_id.get(edge.id)
+            if existing:
+                edge = _merge_edge(existing, edge)
+            edges_by_id[edge.id] = edge
+    return (
+        [nodes_by_id[node_id] for node_id in sorted(nodes_by_id)],
+        [edges_by_id[edge_id] for edge_id in sorted(edges_by_id)],
+        sorted(merged_sources),
+    )
+
+
+def _merge_node(left: GraphNode, right: GraphNode) -> GraphNode:
+    properties = dict(left.properties)
+    for key, value in right.properties.items():
+        if key == "source_chunk_ids":
+            properties[key] = sorted(
+                set(str(item) for item in properties.get(key, []))
+                | set(str(item) for item in value)
+            )
+        elif key not in properties or not properties[key]:
+            properties[key] = value
+    return left.model_copy(update={"properties": properties})
+
+
+def _merge_edge(left: GraphEdge, right: GraphEdge) -> GraphEdge:
+    evidence_ids = sorted(set(left.evidence_ids) | set(right.evidence_ids))
+    return left.model_copy(update={"evidence_ids": evidence_ids})
+
+
+def _global_graph_artifact(
+    nodes: list[GraphNode],
+    edges: list[GraphEdge],
+    source_ids: list[str],
+) -> RetrievalGraphArtifact:
+    return RetrievalGraphArtifact(
+        artifact_id="graph:global",
+        artifact_type="graph",
+        content_with_weight=json.dumps(_graph_payload(nodes, edges), ensure_ascii=False),
+        source_id=source_ids,
+        node_count=len(nodes),
+        edge_count=len(edges),
+        metadata={"scope": "global", "built_from": "subgraphs"},
+    )
