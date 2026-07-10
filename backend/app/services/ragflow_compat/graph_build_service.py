@@ -21,6 +21,8 @@ from app.services.ragflow_compat.schemas import (
 )
 from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
 
+GRAPH_FIELD_SEP = "<SEP>"
+
 
 @dataclass(frozen=True)
 class RagflowGraphBuildSummary:
@@ -686,14 +688,67 @@ def _merge_subgraph_artifacts(artifacts) -> tuple[list[GraphNode], list[GraphEdg
 def _merge_node(left: GraphNode, right: GraphNode) -> GraphNode:
     properties = dict(left.properties)
     for key, value in right.properties.items():
-        if key == "source_chunk_ids":
-            properties[key] = sorted(
-                set(str(item) for item in properties.get(key, []))
-                | set(str(item) for item in value)
-            )
+        if key in {"source_id", "source_chunk_ids"}:
+            properties[key] = _merge_string_values(properties.get(key), value)
+        elif key == "confidence":
+            properties[key] = max(_float_value(properties.get(key)), _float_value(value))
         elif key not in properties or not properties[key]:
             properties[key] = value
-    return left.model_copy(update={"properties": properties})
+    return left.model_copy(
+        update={
+            "description": _merge_descriptions(left.description, right.description),
+            "properties": properties,
+        }
+    )
+
+
+def _merge_descriptions(left: str, right: str) -> str:
+    values = _unique(
+        [
+            item.strip()
+            for value in [left, right]
+            for item in str(value or "").split(GRAPH_FIELD_SEP)
+            if item.strip()
+        ]
+    )
+    return GRAPH_FIELD_SEP.join(values)
+
+
+def _merge_string_values(left, right) -> list[str]:
+    return _unique(
+        [
+            str(item)
+            for value in [left, right]
+            for item in _as_list(value)
+            if str(item).strip()
+        ]
+    )
+
+
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _float_value(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def _merge_edge(left: GraphEdge, right: GraphEdge) -> GraphEdge:

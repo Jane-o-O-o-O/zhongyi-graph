@@ -479,6 +479,88 @@ def test_build_merges_available_subgraphs_into_global_graph_artifact():
     assert len(payload["edges"]) == 1
 
 
+def test_build_merges_duplicate_subgraph_node_provenance_like_ragflow_graph_merge():
+    ingestion_repository, retrieval_repository = _repositories()
+    for source_id in ["doc:a", "doc:b"]:
+        ingestion_repository.upsert_source(_source(source_id))
+        ingestion_repository.replace_pages_and_chunks(source_id, [], [_chunk(source_id)])
+
+    retrieval_repository.save_graph_artifact(
+        RetrievalGraphArtifact(
+            artifact_id="subgraph:doc:a",
+            artifact_type="subgraph",
+            content_with_weight=json.dumps(
+                {
+                    "nodes": [
+                        GraphNode(
+                            id="entity:herb:白芍",
+                            label="Herb",
+                            name="白芍",
+                            description="doc:a 白芍描述",
+                            properties={
+                                "source_id": "doc:a",
+                                "source_chunk_ids": ["chunk:doc:a:1"],
+                                "confidence": 0.72,
+                            },
+                        ).model_dump()
+                    ],
+                    "edges": [],
+                },
+                ensure_ascii=False,
+            ),
+            source_id=["doc:a"],
+            node_count=1,
+            edge_count=0,
+        )
+    )
+    retrieval_repository.save_graph_artifact(
+        RetrievalGraphArtifact(
+            artifact_id="subgraph:doc:b",
+            artifact_type="subgraph",
+            content_with_weight=json.dumps(
+                {
+                    "nodes": [
+                        GraphNode(
+                            id="entity:herb:白芍",
+                            label="Herb",
+                            name="白芍",
+                            description="doc:b 白芍描述",
+                            properties={
+                                "source_id": "doc:b",
+                                "source_chunk_ids": ["chunk:doc:b:1"],
+                                "confidence": 0.91,
+                            },
+                        ).model_dump()
+                    ],
+                    "edges": [],
+                },
+                ensure_ascii=False,
+            ),
+            source_id=["doc:b"],
+            node_count=1,
+            edge_count=0,
+        )
+    )
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=RecordingExtractor(),
+    ).build(["doc:a", "doc:b"], with_resolution=False, with_community=False)
+
+    global_artifact = retrieval_repository.get_graph_artifact("graph:global")
+    assert global_artifact is not None
+    assert summary.sources_skipped == 2
+    assert summary.global_nodes == 1
+    payload = json.loads(global_artifact.content_with_weight)
+    node = payload["nodes"][0]
+    assert "doc:a 白芍描述" in node["description"]
+    assert "doc:b 白芍描述" in node["description"]
+    assert node["properties"]["source_id"] == ["doc:a", "doc:b"]
+    assert node["properties"]["source_chunk_ids"] == ["chunk:doc:a:1", "chunk:doc:b:1"]
+    assert node["properties"]["confidence"] == 0.91
+
+
 def test_build_clears_phase_markers_when_new_subgraph_changes_graph():
     ingestion_repository, retrieval_repository = _repositories()
     ingestion_repository.upsert_source(_source("doc:a"))
