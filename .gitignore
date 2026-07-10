@@ -10,6 +10,7 @@ dist/
 build/
 *.egg-info/
 .superpowers/
+.worktrees/
 neo4j/data/
 neo4j/logs/
 ragflow/data/
