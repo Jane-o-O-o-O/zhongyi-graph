@@ -120,6 +120,24 @@ retrieval_kg_graph_artifacts_table = Table(
     Column("metadata", JSON, nullable=False, default=dict),
 )
 
+retrieval_graphrag_checkpoints_table = Table(
+    "retrieval_graphrag_checkpoints",
+    retrieval_metadata,
+    Column("checkpoint_type", String, primary_key=True),
+    Column("checkpoint_key", String, primary_key=True),
+    Column("payload", JSON, nullable=False, default=dict),
+    Column("updated_at", String, nullable=False, default=""),
+    Column("metadata", JSON, nullable=False, default=dict),
+)
+
+retrieval_graphrag_phase_markers_table = Table(
+    "retrieval_graphrag_phase_markers",
+    retrieval_metadata,
+    Column("phase", String, primary_key=True),
+    Column("marked_at", String, nullable=False, default=""),
+    Column("metadata", JSON, nullable=False, default=dict),
+)
+
 retrieval_kg_type_samples_table = Table(
     "retrieval_kg_type_samples",
     retrieval_metadata,

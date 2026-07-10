@@ -35,6 +35,8 @@ def test_repository_creates_ragflow_compatible_tables():
         "retrieval_kg_relations",
         "retrieval_kg_community_reports",
         "retrieval_kg_graph_artifacts",
+        "retrieval_graphrag_checkpoints",
+        "retrieval_graphrag_phase_markers",
         "retrieval_kg_type_samples",
         "retrieval_sync_state",
         "retrieval_query_logs",
@@ -137,6 +139,34 @@ def test_repository_round_trips_retrieval_rows():
     assert repository.list_community_reports() == [community_report]
     assert repository.list_graph_artifacts() == [graph_artifact]
     assert repository.list_type_samples() == [samples]
+
+
+def test_repository_manages_graphrag_checkpoints_and_phase_markers():
+    repository = _repository()
+
+    assert repository.save_graphrag_checkpoint(
+        "resolution",
+        "checkpoint:a",
+        {"pairs": [["白芍", "白芍药"]]},
+    )
+    assert repository.save_graphrag_checkpoint(
+        "resolution",
+        "checkpoint:b",
+        {"pairs": [["柴胡", "北柴胡"]]},
+    )
+
+    assert repository.load_graphrag_checkpoints("resolution") == {
+        "checkpoint:a": {"pairs": [["白芍", "白芍药"]]},
+        "checkpoint:b": {"pairs": [["柴胡", "北柴胡"]]},
+    }
+    assert repository.cleanup_graphrag_checkpoints("resolution") == 2
+    assert repository.load_graphrag_checkpoints("resolution") == {}
+
+    assert repository.has_graphrag_phase_marker("resolution_done") is False
+    assert repository.set_graphrag_phase_marker("resolution_done")
+    assert repository.has_graphrag_phase_marker("resolution_done") is True
+    repository.clear_graphrag_phase_markers(["resolution_done"])
+    assert repository.has_graphrag_phase_marker("resolution_done") is False
 
 
 def test_repository_audit_counts_vectors_and_chunk_lengths():

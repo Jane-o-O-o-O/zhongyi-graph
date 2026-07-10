@@ -68,7 +68,8 @@ class RagflowRetrievalSyncService:
         entity_lookup = {
             (source_id, entity.entity_id): entity for source_id, entity in entities_with_source
         }
-        if self.graph_service and self.graph_service.nodes:
+        graph_branch = bool(self.graph_service and self.graph_service.nodes)
+        if graph_branch:
             evidence_lookup = _candidate_evidence_lookup(
                 entities_with_source,
                 relations_with_source,
@@ -119,6 +120,9 @@ class RagflowRetrievalSyncService:
         self.retrieval_repository.append_community_reports(community_reports)
         self.retrieval_repository.append_graph_artifacts(graph_artifacts)
         self.retrieval_repository.append_type_samples(retrieval_type_samples)
+        if graph_branch:
+            self.retrieval_repository.set_graphrag_phase_marker("resolution_done")
+            self.retrieval_repository.set_graphrag_phase_marker("community_done")
         return {
             "documents": len(retrieval_documents),
             "chunks": chunk_count,

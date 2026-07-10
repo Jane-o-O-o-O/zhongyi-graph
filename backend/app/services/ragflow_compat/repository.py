@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 import math
 from threading import Lock
 from typing import Any, TypeVar
@@ -22,6 +23,8 @@ from app.services.ragflow_compat.tables import (
     retrieval_chunk_terms_table,
     retrieval_chunks_table,
     retrieval_documents_table,
+    retrieval_graphrag_checkpoints_table,
+    retrieval_graphrag_phase_markers_table,
     retrieval_kg_entities_table,
     retrieval_kg_community_reports_table,
     retrieval_kg_graph_artifacts_table,
@@ -111,6 +114,98 @@ class RagflowRetrievalRepository:
 
     def replace_type_samples(self, samples: list[RetrievalTypeSamples]) -> None:
         self._replace_all(retrieval_kg_type_samples_table, [_row(sample) for sample in samples])
+
+    def save_graphrag_checkpoint(
+        self,
+        checkpoint_type: str,
+        checkpoint_key: str,
+        payload: Any,
+    ) -> bool:
+        if not checkpoint_type or not checkpoint_key:
+            return False
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(retrieval_graphrag_checkpoints_table)
+                .where(retrieval_graphrag_checkpoints_table.c.checkpoint_type == checkpoint_type)
+                .where(retrieval_graphrag_checkpoints_table.c.checkpoint_key == checkpoint_key)
+            )
+            connection.execute(
+                retrieval_graphrag_checkpoints_table.insert(),
+                {
+                    "checkpoint_type": checkpoint_type,
+                    "checkpoint_key": checkpoint_key,
+                    "payload": payload,
+                    "updated_at": _utc_now(),
+                    "metadata": {},
+                },
+            )
+        return True
+
+    def load_graphrag_checkpoints(self, checkpoint_type: str) -> dict[str, Any]:
+        if not checkpoint_type:
+            return {}
+        statement = (
+            select(
+                retrieval_graphrag_checkpoints_table.c.checkpoint_key,
+                retrieval_graphrag_checkpoints_table.c.payload,
+            )
+            .where(retrieval_graphrag_checkpoints_table.c.checkpoint_type == checkpoint_type)
+            .order_by(retrieval_graphrag_checkpoints_table.c.checkpoint_key)
+        )
+        with self.engine.begin() as connection:
+            return {
+                str(row.checkpoint_key): row.payload
+                for row in connection.execute(statement)
+            }
+
+    def cleanup_graphrag_checkpoints(self, checkpoint_type: str) -> int:
+        if not checkpoint_type:
+            return 0
+        with self.engine.begin() as connection:
+            result = connection.execute(
+                delete(retrieval_graphrag_checkpoints_table)
+                .where(retrieval_graphrag_checkpoints_table.c.checkpoint_type == checkpoint_type)
+            )
+        return result.rowcount or 0
+
+    def has_graphrag_phase_marker(self, phase: str) -> bool:
+        if not phase:
+            return False
+        statement = (
+            select(retrieval_graphrag_phase_markers_table.c.phase)
+            .where(retrieval_graphrag_phase_markers_table.c.phase == phase)
+            .limit(1)
+        )
+        with self.engine.begin() as connection:
+            return connection.execute(statement).first() is not None
+
+    def set_graphrag_phase_marker(self, phase: str) -> bool:
+        if not phase:
+            return False
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(retrieval_graphrag_phase_markers_table)
+                .where(retrieval_graphrag_phase_markers_table.c.phase == phase)
+            )
+            connection.execute(
+                retrieval_graphrag_phase_markers_table.insert(),
+                {
+                    "phase": phase,
+                    "marked_at": _utc_now(),
+                    "metadata": {},
+                },
+            )
+        return True
+
+    def clear_graphrag_phase_markers(self, phases: list[str] | tuple[str, ...]) -> None:
+        clean_phases = _candidate_keywords(list(phases))
+        if not clean_phases:
+            return
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(retrieval_graphrag_phase_markers_table)
+                .where(retrieval_graphrag_phase_markers_table.c.phase.in_(clean_phases))
+            )
 
     def update_chunk_vector_status(self, chunk_id: str, *, point_id: str, status: str) -> None:
         if self.engine.dialect.name != "postgresql":
@@ -989,6 +1084,10 @@ class RagflowRetrievalRepository:
 
 def _row(value) -> dict[str, Any]:
     return asdict(value)
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 def _count(connection, table) -> int:

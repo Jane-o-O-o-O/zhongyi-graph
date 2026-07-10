@@ -200,6 +200,8 @@ def test_sync_service_rebuilds_kg_index_from_graph_service_when_available():
     assert graph_artifacts[0].node_count == 2
     assert graph_artifacts[0].edge_count == 1
     assert any("chunk:1" in artifact.source_id for artifact in graph_artifacts)
+    assert retrieval_repository.has_graphrag_phase_marker("resolution_done") is True
+    assert retrieval_repository.has_graphrag_phase_marker("community_done") is True
     community_report = retrieval_repository.list_community_reports()[0]
     assert community_report.entities_kwd == ["失眠", "心脾两虚"]
     assert "失眠" in community_report.content_with_weight
