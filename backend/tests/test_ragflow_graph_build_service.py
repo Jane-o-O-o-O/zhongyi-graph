@@ -24,7 +24,10 @@ from app.services.ragflow_compat.entity_resolution import RagflowGraphEntityReso
 from app.services.ragflow_compat.graph_build_service import RagflowGraphBuildService
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
-from app.services.ragflow_compat.schemas import RetrievalGraphArtifact
+from app.services.ragflow_compat.schemas import (
+    RetrievalGraphArtifact,
+    RetrievalGraphRagBuildRun,
+)
 
 
 class RecordingExtractor:
@@ -48,6 +51,21 @@ def _engine():
 def _repositories():
     engine = _engine()
     return IngestionRepository(engine), RagflowRetrievalRepository(engine)
+
+
+class RecordingRunRepository(RagflowRetrievalRepository):
+    def __init__(self, engine):
+        super().__init__(engine)
+        self.saved_runs: list[RetrievalGraphRagBuildRun] = []
+
+    def save_graphrag_build_run(self, run: RetrievalGraphRagBuildRun) -> None:
+        self.saved_runs.append(run)
+        super().save_graphrag_build_run(run)
+
+
+def _repositories_with_recording_runs():
+    engine = _engine()
+    return IngestionRepository(engine), RecordingRunRepository(engine)
 
 
 def _source(source_id: str = "doc:a") -> SourceManifest:
@@ -261,6 +279,42 @@ def test_build_retries_transient_source_extraction_failure():
     assert summary.sources_built == 1
     assert summary.sources_failed == 0
     assert retrieval_repository.get_subgraph_artifact("doc:a") is not None
+
+
+def test_build_records_per_source_progress_in_run_state():
+    ingestion_repository, retrieval_repository = _repositories_with_recording_runs()
+    ingestion_repository.upsert_source(_source("doc:a"))
+    ingestion_repository.upsert_source(_source("doc:b"))
+    ingestion_repository.replace_pages_and_chunks("doc:a", [], [_chunk("doc:a")])
+
+    summary = RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_extractor=FixedExtractor(),
+    ).build(["doc:a", "doc:b"], with_resolution=False, with_community=False)
+
+    progress_runs = [
+        run
+        for run in retrieval_repository.saved_runs
+        if run.run_id == summary.run_id and run.status == "running" and run.processed > 0
+    ]
+    assert [(run.processed, run.failed) for run in progress_runs] == [(1, 0), (2, 1)]
+    assert progress_runs[0].metadata["current_source_id"] == "doc:a"
+    assert progress_runs[0].metadata["source_events"] == [
+        {"source_id": "doc:a", "status": "built", "processed": 1, "failed": 0}
+    ]
+    assert progress_runs[1].metadata["current_source_id"] == "doc:b"
+    assert progress_runs[1].metadata["source_events"][-1] == {
+        "source_id": "doc:b",
+        "status": "failed",
+        "processed": 2,
+        "failed": 1,
+    }
+
+    completed_run = retrieval_repository.get_graphrag_build_run(summary.run_id)
+    assert completed_run is not None
+    assert completed_run.status == "completed"
+    assert completed_run.metadata["source_events"] == progress_runs[-1].metadata["source_events"]
 
 
 def test_build_merges_available_subgraphs_into_global_graph_artifact():

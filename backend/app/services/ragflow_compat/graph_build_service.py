@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 import json
 from uuid import uuid4
@@ -41,6 +41,7 @@ class RagflowGraphBuildSummary:
     resolution_pairs_merged: int = 0
     community_reports_replayed: int = 0
     community_reports_generated: int = 0
+    source_events: list[dict] = field(default_factory=list)
 
 
 class RagflowGraphBuildAlreadyRunningError(RuntimeError):
@@ -109,6 +110,7 @@ class RagflowGraphBuildService:
             try:
                 summary = self._build_selected_sources(
                     run_id=run_id,
+                    started_at=started_at,
                     selected_source_ids=selected_source_ids,
                     with_resolution=with_resolution,
                     with_community=with_community,
@@ -143,6 +145,7 @@ class RagflowGraphBuildService:
                     "with_resolution": with_resolution,
                     "with_community": with_community,
                     "summary": asdict(summary),
+                    "source_events": summary.source_events,
                 },
             )
             return summary
@@ -153,6 +156,7 @@ class RagflowGraphBuildService:
         self,
         *,
         run_id: str,
+        started_at: str,
         selected_source_ids: list[str],
         with_resolution: bool,
         with_community: bool,
@@ -160,19 +164,56 @@ class RagflowGraphBuildService:
         skipped = 0
         built = 0
         failed = 0
+        source_events: list[dict] = []
         for source_id in selected_source_ids:
             if self.retrieval_repository.get_subgraph_artifact(source_id):
                 skipped += 1
+                self._record_source_progress(
+                    run_id=run_id,
+                    started_at=started_at,
+                    selected_source_ids=selected_source_ids,
+                    with_resolution=with_resolution,
+                    with_community=with_community,
+                    source_id=source_id,
+                    status="skipped",
+                    processed=skipped + built + failed,
+                    failed=failed,
+                    source_events=source_events,
+                )
                 continue
             chunks = self.ingestion_repository.list_chunks(source_id)
             if not chunks:
                 failed += 1
+                self._record_source_progress(
+                    run_id=run_id,
+                    started_at=started_at,
+                    selected_source_ids=selected_source_ids,
+                    with_resolution=with_resolution,
+                    with_community=with_community,
+                    source_id=source_id,
+                    status="failed",
+                    processed=skipped + built + failed,
+                    failed=failed,
+                    source_events=source_events,
+                )
                 continue
             try:
                 entities, relations = self._extract_source_graph(chunks)
                 nodes, edges = _graph_from_candidates(source_id, entities, relations)
                 if not nodes:
                     failed += 1
+                    self._record_source_progress(
+                        run_id=run_id,
+                        started_at=started_at,
+                        selected_source_ids=selected_source_ids,
+                        with_resolution=with_resolution,
+                        with_community=with_community,
+                        source_id=source_id,
+                        status="failed",
+                        processed=skipped + built + failed,
+                        failed=failed,
+                        source_events=source_events,
+                    )
                     continue
                 self.retrieval_repository.save_graph_artifact(
                     _subgraph_artifact(source_id, nodes, edges)
@@ -180,7 +221,21 @@ class RagflowGraphBuildService:
                 built += 1
             except Exception:
                 failed += 1
-                continue
+                status = "failed"
+            else:
+                status = "built"
+            self._record_source_progress(
+                run_id=run_id,
+                started_at=started_at,
+                selected_source_ids=selected_source_ids,
+                with_resolution=with_resolution,
+                with_community=with_community,
+                source_id=source_id,
+                status=status,
+                processed=skipped + built + failed,
+                failed=failed,
+                source_events=source_events,
+            )
         merged_nodes, merged_edges, merged_sources = _merge_subgraph_artifacts(
             self.retrieval_repository.list_graph_artifacts(available_only=True)
         )
@@ -262,6 +317,7 @@ class RagflowGraphBuildService:
             resolution_pairs_merged=resolution_pairs_merged,
             community_reports_replayed=community_reports_replayed,
             community_reports_generated=community_reports_generated,
+            source_events=source_events,
         )
 
     def _extract_source_graph(
@@ -308,6 +364,70 @@ class RagflowGraphBuildService:
             )
         )
 
+    def _record_source_progress(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        selected_source_ids: list[str],
+        with_resolution: bool,
+        with_community: bool,
+        source_id: str,
+        status: str,
+        processed: int,
+        failed: int,
+        source_events: list[dict],
+    ) -> None:
+        source_events.append(
+            _source_event(
+                source_id,
+                status=status,
+                processed=processed,
+                failed=failed,
+            )
+        )
+        self._save_progress_run(
+            run_id=run_id,
+            started_at=started_at,
+            selected_source_ids=selected_source_ids,
+            with_resolution=with_resolution,
+            with_community=with_community,
+            current_source_id=source_id,
+            processed=processed,
+            failed=failed,
+            source_events=source_events,
+        )
+
+    def _save_progress_run(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        selected_source_ids: list[str],
+        with_resolution: bool,
+        with_community: bool,
+        current_source_id: str,
+        processed: int,
+        failed: int,
+        source_events: list[dict],
+    ) -> None:
+        self._save_build_run(
+            run_id=run_id,
+            status="running",
+            started_at=started_at,
+            finished_at="",
+            total=len(selected_source_ids),
+            processed=processed,
+            failed=failed,
+            metadata={
+                "source_ids": selected_source_ids,
+                "with_resolution": with_resolution,
+                "with_community": with_community,
+                "current_source_id": current_source_id,
+                "source_events": list(source_events),
+            },
+        )
+
 
 def _graph_from_candidates(
     source_id: str,
@@ -347,6 +467,21 @@ def _graph_from_candidates(
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _source_event(
+    source_id: str,
+    *,
+    status: str,
+    processed: int,
+    failed: int,
+) -> dict:
+    return {
+        "source_id": source_id,
+        "status": status,
+        "processed": processed,
+        "failed": failed,
+    }
 
 
 def _subgraph_artifact(
