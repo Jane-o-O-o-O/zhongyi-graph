@@ -183,7 +183,9 @@ textarea {
 
 .answer-panel .panel-body {
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .answer-markdown {
@@ -484,10 +486,17 @@ textarea {
   position: fixed;
   top: 166px;
   right: 24px;
+  bottom: 92px;
   z-index: 4;
   width: min(390px, calc(100vw - 48px));
-  max-height: calc(100vh - 252px);
+  max-height: none;
+  min-height: 0;
+  display: flex;
   pointer-events: auto;
+}
+
+.insight-drawer .answer-panel {
+  width: 100%;
 }
 
 @media (max-width: 760px) {
