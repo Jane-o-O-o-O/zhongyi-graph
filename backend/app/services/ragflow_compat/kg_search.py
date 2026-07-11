@@ -89,8 +89,15 @@ class RagflowKgSearch:
                 top_k=max(0, int(comm_topn)),
             )
         ]
-        graph_nodes = self._graph_nodes(scored_entities, ents)
-        graph_edges = self._graph_edges(scored_relations, rels)
+        entity_lookup = self._entity_lookup()
+        graph_nodes = self._graph_nodes(
+            scored_entities,
+            ents,
+            scored_relations,
+            rels,
+            entity_lookup,
+        )
+        graph_edges = self._graph_edges(scored_relations, rels, entity_lookup)
         return KgSearchResult(
             entities=scored_entities,
             relations=scored_relations,
@@ -130,38 +137,59 @@ class RagflowKgSearch:
             relation_data["description"] = relation.content_with_weight
             relation_data["relation"] = relation
 
+    def _entity_lookup(self) -> dict[str, object]:
+        try:
+            entities = self.doc_store.repository.list_kg_entities(available_only=True)
+        except Exception:
+            return {}
+        return {entity.entity_name: entity for entity in entities}
+
     def _graph_nodes(
         self,
         scored_entities: list[ScoredEntity],
         entity_map: dict[str, dict],
+        scored_relations: list[ScoredRelation],
+        relation_map: dict[tuple[str, str], dict],
+        entity_lookup: dict[str, object],
     ) -> list[GraphNode]:
         nodes: dict[str, GraphNode] = {}
         for item in scored_entities:
             entity = entity_map.get(item.entity, {}).get("entity")
             if not entity:
                 continue
-            node_id = entity.source_node_id or _node_id(entity.entity_type, entity.entity_name)
-            nodes[node_id] = GraphNode(
-                id=node_id,
-                label=_graph_label(entity.entity_type),
-                name=entity.entity_name,
-                description=_extract_description(entity.content_with_weight),
-                properties={"score": round(item.score, 6)},
-            )
+            _add_graph_node(nodes, entity, score=round(item.score, 6))
+        for item in scored_relations:
+            relation = _relation_for_scored(item, relation_map)
+            if relation:
+                endpoint_names = [relation.from_entity_kwd, relation.to_entity_kwd]
+            else:
+                endpoint_names = [item.from_entity, item.to_entity]
+            for entity_name in endpoint_names:
+                entity = entity_lookup.get(entity_name)
+                if entity:
+                    _add_graph_node(nodes, entity)
+                    continue
+                node_id = _node_id("", entity_name)
+                nodes.setdefault(
+                    node_id,
+                    GraphNode(
+                        id=node_id,
+                        label="ExternalSource",
+                        name=entity_name,
+                        description=entity_name,
+                    ),
+                )
         return list(nodes.values())
 
     def _graph_edges(
         self,
         scored_relations: list[ScoredRelation],
         relation_map: dict[tuple[str, str], dict],
+        entity_lookup: dict[str, object],
     ) -> list[GraphEdge]:
         edges: list[GraphEdge] = []
         for item in scored_relations:
-            relation_data = relation_map.get(
-                (item.from_entity, item.to_entity),
-                relation_map.get(tuple(sorted((item.from_entity, item.to_entity))), {}),
-            )
-            relation = relation_data.get("relation")
+            relation = _relation_for_scored(item, relation_map)
             if relation:
                 relation_type = relation.relation_type
                 display = relation.display
@@ -179,14 +207,54 @@ class RagflowKgSearch:
             edges.append(
                 GraphEdge(
                     id=edge_id,
-                    source=_node_id("", source_name),
-                    target=_node_id("", target_name),
+                    source=_graph_node_id_for_entity_name(source_name, entity_lookup),
+                    target=_graph_node_id_for_entity_name(target_name, entity_lookup),
                     relation=relation_type,
                     display=display,
                     evidence_ids=evidence_ids,
                 )
             )
         return sorted(edges, key=lambda edge: (0 if edge.evidence_ids else 1, edge.id))
+
+
+def _relation_for_scored(
+    item: ScoredRelation,
+    relation_map: dict[tuple[str, str], dict],
+):
+    relation_data = relation_map.get(
+        (item.from_entity, item.to_entity),
+        relation_map.get(tuple(sorted((item.from_entity, item.to_entity))), {}),
+    )
+    return relation_data.get("relation")
+
+
+def _add_graph_node(
+    nodes: dict[str, GraphNode],
+    entity,
+    *,
+    score: float | None = None,
+) -> None:
+    node_id = entity.source_node_id or _node_id(entity.entity_type, entity.entity_name)
+    properties = {}
+    if score is not None:
+        properties["score"] = score
+    nodes[node_id] = GraphNode(
+        id=node_id,
+        label=_graph_label(entity.entity_type),
+        name=entity.entity_name,
+        description=_extract_description(entity.content_with_weight),
+        properties=properties,
+    )
+
+
+def _graph_node_id_for_entity_name(
+    entity_name: str,
+    entity_lookup: dict[str, object],
+) -> str:
+    entity = entity_lookup.get(entity_name)
+    if entity:
+        return entity.source_node_id or _node_id(entity.entity_type, entity.entity_name)
+    return _node_id("", entity_name)
 
 
 def _node_id(entity_type: str, entity_name: str) -> str:

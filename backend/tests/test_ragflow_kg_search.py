@@ -2,7 +2,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.services.model_clients import EmbeddingClient
-from app.services.ragflow_compat.doc_store import EntitySearchHit, RagflowDocStore
+from app.services.ragflow_compat.doc_store import (
+    EntitySearchHit,
+    RagflowDocStore,
+    RelationSearchHit,
+)
 from app.services.ragflow_compat.kg_search import RagflowKgSearch
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.schemas import (
@@ -143,6 +147,74 @@ def test_kg_search_combines_entity_type_relation_and_nhop_scores():
     assert result.community_reports[0].title == "失眠、心脾两虚"
     assert result.graph_edges[0].source == "symptom:失眠"
     assert result.graph_edges[0].target == "syndrome:心脾两虚"
+
+
+def test_kg_search_includes_relation_endpoint_nodes_in_query_graph():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    repository = RagflowRetrievalRepository(engine)
+    headache = RetrievalKgEntity(
+        entity_id="entity:头痛",
+        entity_name="头痛",
+        entity_type="Indication",
+        source_node_id="indication:头痛",
+        content_with_weight='{"description":"头痛 Indication"}',
+        description="头痛 Indication",
+        rank_flt=2.0,
+    )
+    herb = RetrievalKgEntity(
+        entity_id="entity:白芍",
+        entity_name="白芍",
+        entity_type="Herb",
+        source_node_id="herb:白芍",
+        content_with_weight='{"description":"白芍 Herb"}',
+        description="白芍 Herb",
+        rank_flt=1.0,
+    )
+    relation = RetrievalKgRelation(
+        relation_id="relation:白芍:头痛",
+        from_entity_kwd="白芍",
+        to_entity_kwd="头痛",
+        relation_type="TREATS",
+        display="主治",
+        content_with_weight="白芍 主治 头痛",
+        weight_int=2,
+        evidence_chunk_ids=["chunk:1"],
+    )
+    repository.replace_kg_entities([headache, herb])
+    repository.replace_kg_relations([relation])
+
+    class EndpointDocStore:
+        def __init__(self, repository):
+            self.repository = repository
+
+        def search_entities(self, query, keywords, **kwargs):
+            del query, keywords, kwargs
+            return [EntitySearchHit(entity=headache, score=1.0)]
+
+        def search_relations(self, query, **kwargs):
+            del query, kwargs
+            return [RelationSearchHit(relation=relation, score=1.0)]
+
+        def search_community_reports(self, entities, *, top_k=1):
+            del entities, top_k
+            return []
+
+    result = RagflowKgSearch(EndpointDocStore(repository)).retrieve(
+        "头痛怎么办",
+        answer_type_keywords=[],
+        entities_from_query=["头痛"],
+    )
+
+    graph_node_ids = {node.id for node in result.graph_nodes}
+    assert {edge.source for edge in result.graph_edges}.issubset(graph_node_ids)
+    assert {edge.target for edge in result.graph_edges}.issubset(graph_node_ids)
+    assert "herb:白芍" in graph_node_ids
+    assert "indication:头痛" in graph_node_ids
 
 
 def test_kg_search_backfills_nhop_relation_details_from_repository():
