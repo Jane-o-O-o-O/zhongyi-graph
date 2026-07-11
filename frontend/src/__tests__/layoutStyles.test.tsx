@@ -30,4 +30,10 @@ describe('layout styles', () => {
     expect(appCss).toContain('.answer-panel .panel-body {');
     expect(appCss).toContain('overflow: auto;');
   });
+
+  it('keeps the question input text readable on the dark topbar', () => {
+    expect(appCss).toContain('.question-form .ant-input-affix-wrapper input.ant-input');
+    expect(appCss).toContain('color: #ffffff;');
+    expect(appCss).toContain('-webkit-text-fill-color: #ffffff;');
+  });
 });
