@@ -123,7 +123,22 @@ function graphSize(container: HTMLDivElement) {
 }
 
 function configureOverviewSpread(graph: DemoGraphApi, nodeCount: number) {
+  if (nodeCount <= 1) {
+    return;
+  }
+
   if (nodeCount < 500) {
+    graph
+      .warmupTicks(70)
+      .cooldownTicks(180)
+      .d3AlphaDecay(0.022)
+      .d3VelocityDecay(0.28);
+
+    const linkForce = graph.d3Force('link') as GraphLinkForce | undefined;
+    linkForce?.distance(135).strength(0.08).iterations(1);
+
+    const chargeForce = graph.d3Force('charge') as GraphChargeForce | undefined;
+    chargeForce?.strength(-180);
     return;
   }
 

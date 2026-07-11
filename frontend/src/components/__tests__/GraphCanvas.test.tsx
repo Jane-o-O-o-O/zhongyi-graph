@@ -192,8 +192,16 @@ describe('GraphCanvas', () => {
     expect(nodeThreeObjectExtend).toHaveBeenCalledWith(true);
     expect(linkOpacity).toHaveBeenCalledWith(0.34);
     expect(linkHoverPrecision).toHaveBeenCalledWith(6);
-    expect(warmupTicks).not.toHaveBeenCalled();
-    expect(d3Force).not.toHaveBeenCalled();
+    expect(warmupTicks).toHaveBeenCalledWith(70);
+    expect(cooldownTicks).toHaveBeenCalledWith(180);
+    expect(d3AlphaDecay).toHaveBeenCalledWith(0.022);
+    expect(d3VelocityDecay).toHaveBeenCalledWith(0.28);
+    expect(d3Force).toHaveBeenCalledWith('link');
+    expect(d3Force).toHaveBeenCalledWith('charge');
+    expect(linkForceDistance).toHaveBeenCalledWith(135);
+    expect(linkForceStrength).toHaveBeenCalledWith(0.08);
+    expect(linkForceIterations).toHaveBeenCalledWith(1);
+    expect(chargeForceStrength).toHaveBeenCalledWith(-180);
     expect(showPointerCursor).toHaveBeenCalledWith(expect.any(Function));
     expect(linkDirectionalParticles).toHaveBeenCalledWith(expect.any(Function));
     expect(linkDirectionalParticleSpeed).toHaveBeenCalledWith(expect.any(Function));
