@@ -456,6 +456,14 @@ def publish_ingestion_sources(source_ids: list[str]) -> dict:
         question_service.vector_index.upsert_payloads_qdrant(artifact.vector_payloads)
     except Exception:
         pass
+    try:
+        RagflowRetrievalSyncService(
+            ingestion_repository=ingestion_repository,
+            retrieval_repository=ragflow_repository,
+            graph_service=question_service.graph_service,
+        ).rebuild_from_ingestion()
+    except Exception:
+        pass
     return {
         "status": "published",
         "batch_id": batch["batch_id"],

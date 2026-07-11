@@ -50,6 +50,12 @@ def test_settings_env_file_points_to_repo_root():
     assert Path(env_file).resolve() == REPO_ROOT / ".env"
 
 
+def test_settings_defaults_to_ragflow_compatible_retrieval():
+    settings = Settings(_env_file=None)
+
+    assert settings.retrieval_engine == "ragflow_compat"
+
+
 def test_vite_html_entrypoint_exists():
     html = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
     assert 'src="/src/main.tsx"' in html
