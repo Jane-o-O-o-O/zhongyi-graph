@@ -82,6 +82,32 @@ def test_graph_analytics_can_write_metrics_to_node_properties():
     assert nodes[0].properties["visual_weight"] > 0
 
 
+def test_graph_analytics_falls_back_when_pagerank_optional_dependency_is_missing(monkeypatch):
+    def raise_missing_dependency(*args, **kwargs):
+        del args, kwargs
+        raise ImportError("scipy missing")
+
+    monkeypatch.setattr(graph_analytics_module.nx, "pagerank", raise_missing_dependency)
+    nodes = [
+        GraphNode(id="formula:核心方", label="Formula", name="核心方"),
+        GraphNode(id="herb:柴胡", label="Herb", name="柴胡"),
+    ]
+    edges = [
+        GraphEdge(
+            id="edge:formula:herb",
+            source="formula:核心方",
+            target="herb:柴胡",
+            relation="COMPOSED_OF",
+            display="组成",
+        ),
+    ]
+
+    result = GraphAnalyticsService().analyze(nodes, edges)
+
+    assert result.by_node_id["formula:核心方"].pagerank == 0.5
+    assert result.by_node_id["herb:柴胡"].pagerank == 0.5
+
+
 def test_graph_analytics_prefers_leiden_community_runner_when_available(monkeypatch):
     @dataclass(frozen=True)
     class FakePartition:

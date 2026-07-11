@@ -161,7 +161,7 @@ def _pagerank(graph: nx.Graph) -> dict[str, float]:
         return {}
     try:
         return nx.pagerank(graph, weight="weight", max_iter=100, tol=1.0e-06)
-    except nx.NetworkXException:
+    except (ImportError, nx.NetworkXException):
         value = 1.0 / graph.number_of_nodes()
         return {str(node): value for node in graph.nodes}
 
