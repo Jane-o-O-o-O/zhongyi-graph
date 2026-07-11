@@ -28,6 +28,20 @@ describe('layout styles', () => {
     expect(appCss).toContain('.insight-toggle');
     expect(appCss).toContain('overflow: hidden;');
     expect(appCss).toContain('.answer-panel .panel-body {');
-    expect(appCss).toContain('overflow: auto;');
+    expect(appCss).toContain('overflow-y: auto;');
+  });
+
+  it('keeps the question input text readable on the dark topbar', () => {
+    expect(appCss).toContain('.question-form .ant-input-affix-wrapper input.ant-input');
+    expect(appCss).toContain('color: #ffffff;');
+    expect(appCss).toContain('-webkit-text-fill-color: #ffffff;');
+  });
+
+  it('pins the insight drawer above the bottom graph toolbar with scrollable content', () => {
+    expect(appCss).toContain('bottom: 92px;');
+    expect(appCss).toContain('max-height: none;');
+    expect(appCss).toContain('.insight-drawer .answer-panel');
+    expect(appCss).toContain('overflow-y: auto;');
+    expect(appCss).toContain('overscroll-behavior: contain;');
   });
 });
