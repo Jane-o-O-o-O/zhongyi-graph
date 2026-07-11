@@ -4,7 +4,9 @@ from sqlalchemy.pool import StaticPool
 
 from app.api import routes
 from app.main import app
+from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate, SourceManifest
+from app.services.graph_service import GraphService
 from app.services.ingestion_repository import IngestionRepository
 from app.services.ragflow_compat.phase_markers import PHASE_COMMUNITY, PHASE_RESOLUTION
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
@@ -63,6 +65,38 @@ def test_question_service_delegates_to_ragflow_service_when_configured():
     assert captured["rel_topn"] == 9
     assert captured["ent_sim_threshold"] == 0.25
     assert captured["rel_sim_threshold"] == 0.35
+
+
+def test_seed_ragflow_retrieval_from_graph_populates_empty_repository():
+    ingestion_repository = IngestionRepository.in_memory()
+    retrieval_repository = RagflowRetrievalRepository(ingestion_repository.engine)
+    graph_service = GraphService(
+        nodes=[
+            GraphNode(id="symptom:失眠", label="Indication", name="失眠"),
+            GraphNode(id="formula:归脾汤", label="Formula", name="归脾汤"),
+        ],
+        edges=[
+            GraphEdge(
+                id="edge:失眠:归脾汤",
+                source="symptom:失眠",
+                target="formula:归脾汤",
+                relation="TREATED_BY",
+                display="治以",
+            )
+        ],
+    )
+
+    summary = routes._seed_ragflow_retrieval_from_graph_if_empty(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_service=graph_service,
+    )
+
+    assert summary["kg_entities"] == 2
+    assert summary["kg_relations"] == 1
+    assert summary["graph_artifacts"] == 1
+    assert len(retrieval_repository.list_kg_entities(available_only=True)) == 2
+    assert len(retrieval_repository.list_kg_relations(available_only=True)) == 1
 
 
 class FixedRouteExtractor:

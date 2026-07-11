@@ -45,6 +45,35 @@ from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.retrieval_service import RagflowCompatibleRetrievalService
 from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
 
+
+def _empty_retrieval_seed_summary() -> dict[str, int]:
+    return {
+        "documents": 0,
+        "chunks": 0,
+        "kg_entities": 0,
+        "kg_relations": 0,
+        "community_reports": 0,
+        "graph_artifacts": 0,
+    }
+
+
+def _seed_ragflow_retrieval_from_graph_if_empty(
+    *,
+    ingestion_repository: IngestionRepository,
+    retrieval_repository: RagflowRetrievalRepository,
+    graph_service: GraphService,
+) -> dict[str, int]:
+    if not graph_service.nodes:
+        return _empty_retrieval_seed_summary()
+    if retrieval_repository.audit().kg_entities > 0:
+        return _empty_retrieval_seed_summary()
+    return RagflowRetrievalSyncService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_service=graph_service,
+    ).rebuild_from_ingestion()
+
+
 router = APIRouter(prefix="/api")
 settings = get_settings()
 question_service = QuestionService.from_settings(
@@ -159,6 +188,15 @@ try:
     restored_artifact = ingestion_service.restore_published_artifact()
     if restored_artifact.nodes or restored_artifact.edges or restored_artifact.evidence:
         question_service.publish_artifact(restored_artifact)
+except Exception:
+    pass
+
+try:
+    _seed_ragflow_retrieval_from_graph_if_empty(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=ragflow_repository,
+        graph_service=question_service.graph_service,
+    )
 except Exception:
     pass
 
