@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from app.models.graph import GraphNode
 from app.services.graph_analytics_service import LOW_VALUE_LABELS
@@ -16,6 +17,11 @@ class CommunitySummary:
     weight: float
     entities: list[str]
     label_counts: list[str]
+    findings: list[dict[str, Any] | str] | None = None
+    rating: float = 0.0
+    rating_explanation: str = ""
+    level: int = 0
+    source_node_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -28,14 +34,18 @@ class GraphCommunitySummaryResult:
             summary = self.by_community_id.get(community_id)
             if not summary:
                 continue
+            communities = _unique_names([*node.properties.get("communities", []), summary.title])
             node.properties.update(
                 {
+                    "communities": communities,
                     "community_title": summary.title,
                     "community_summary": summary.summary,
                     "community_size": summary.size,
                     "community_weight": summary.weight,
                     "community_entities": summary.entities,
                     "community_label_counts": summary.label_counts,
+                    "community_rating": summary.rating,
+                    "community_rating_explanation": summary.rating_explanation,
                 }
             )
 
@@ -80,6 +90,7 @@ class GraphCommunitySummaryService:
                     f"{label}:{count}"
                     for label, count in label_counts.most_common()
                 ],
+                source_node_ids=[node.id for node in sorted(group_nodes, key=lambda item: item.id)],
             )
         return GraphCommunitySummaryResult(by_community_id=summaries)
 

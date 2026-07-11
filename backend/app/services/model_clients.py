@@ -167,7 +167,25 @@ class StructuredExtractionClient:
         )
         return _normalize_batch_extraction_payload(payload)
 
-    def extract_query(self, question: str) -> dict:
+    def extract_query(self, question: str, type_pool: dict[str, list[str]] | None = None) -> dict:
+        if type_pool is not None:
+            return self._chat_json(
+                system=(
+                    "/no_think 你是 GraphRAG 查询改写器。"
+                    "给定用户问题和 Answer type pool，输出适合知识图谱检索的 JSON。"
+                    "answer_type_keywords 必须从 Answer type pool 的类型中选择，最多 3 个，"
+                    "按可能性从高到低排列。"
+                    "entities_from_query 只放用户问题中明确出现或直接同义标准化的具体实体、细节和术语，最多 5 个。"
+                    "只输出 JSON，格式为："
+                    "{\"answer_type_keywords\":[\"Formula\"],"
+                    "\"entities_from_query\":[\"失眠\",\"归脾汤\"]}。"
+                ),
+                user=(
+                    "/no_think 问题："
+                    f"{question}\nAnswer type pool："
+                    + json.dumps(type_pool, ensure_ascii=False)
+                ),
+            )
         return self._chat_json(
             system=(
                 "/no_think 你是中医知识图谱查询理解器。"
@@ -183,6 +201,62 @@ class StructuredExtractionClient:
             ),
             user=f"/no_think 问题：{question}",
         )
+
+    def resolve_entity_pairs(
+        self,
+        *,
+        entity_type: str,
+        pairs: Sequence[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        if not pairs:
+            return []
+        payload = self._chat_json(
+            system=(
+                "/no_think 你是中医知识图谱实体消歧器。"
+                "判断每个候选实体对是否表示同一个实体，只输出 JSON。"
+                "必须聚焦实体的关键医学含义，忽略别名、简称、繁简、前后缀等噪声。"
+                "如果两个名称只是相关但不是同一个实体，same 必须为 false。"
+                "输出格式：{\"pairs\":[{\"source\":\"实体A\",\"target\":\"实体B\",\"same\":true}]}"
+            ),
+            user=(
+                "/no_think 实体类型："
+                f"{entity_type}\n候选实体对："
+                + json.dumps(
+                    [
+                        {"source": source, "target": target}
+                        for source, target in pairs
+                    ],
+                    ensure_ascii=False,
+                )
+            ),
+        )
+        return _selected_resolution_pairs(payload, pairs)
+
+    def generate_community_report(
+        self,
+        *,
+        community_id: int,
+        entities: Sequence[str],
+        relations: Sequence[str],
+    ) -> dict:
+        payload = self._chat_json(
+            system=(
+                "/no_think 你是中医知识图谱社区报告生成器。"
+                "根据一个图谱社区内的实体和关系，生成结构化社区报告，只输出 JSON。"
+                "报告必须解释该社区的医学主题、主要实体、关键关系和重要性。"
+                "输出格式：{\"title\":\"社区标题\",\"summary\":\"社区摘要\","
+                "\"findings\":[{\"summary\":\"发现\",\"explanation\":\"解释\"}],"
+                "\"rating\":1.0,\"rating_explanation\":\"评分解释\"}"
+            ),
+            user=(
+                f"/no_think 社区ID：{community_id}\n"
+                "实体："
+                + json.dumps(list(entities), ensure_ascii=False)
+                + "\n关系："
+                + json.dumps(list(relations), ensure_ascii=False)
+            ),
+        )
+        return _normalize_community_report_payload(payload)
 
     def _chat_json(self, *, system: str, user: str) -> dict:
         payload = {
@@ -274,99 +348,126 @@ class _DeterministicExtractionHttpClient:
                 "expanded_entities": expanded_entities,
                 "relations": [],
             }
+        elif normalized_user.startswith("批量文本："):
+            raw_items = normalized_user.removeprefix("批量文本：").strip()
+            try:
+                items = json_module_loads(raw_items)
+            except ValueError:
+                items = []
+            payload = {"items": []}
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    unit_id = str(item.get("unit_id", "")).strip()
+                    text = str(item.get("text", "")).strip()
+                    if not unit_id:
+                        continue
+                    extracted = _deterministic_tcm_extraction_payload(text)
+                    payload["items"].append(
+                        {
+                            "unit_id": unit_id,
+                            "entities": extracted["entities"],
+                            "relations": extracted["relations"],
+                        }
+                    )
         else:
             text = normalized_user.removeprefix("文本：")
-            entities = []
-            for name, label in [
-                ("头痛", "Symptom"),
-                ("发热头痛", "Symptom"),
-                ("不寐", "Symptom"),
-                ("失眠", "Symptom"),
-                ("心脾两虚", "Syndrome"),
-                ("补益心脾", "Treatment"),
-                ("归脾汤", "Formula"),
-                ("党参", "Herb"),
-            ]:
-                if name in text:
-                    entities.append({"name": name, "label": label, "confidence": 0.8})
-            relations = []
-            names = {entity["name"] for entity in entities}
-            if "头痛" in names and "心脾两虚" in names:
-                relations.append(
-                    {
-                        "source": "头痛",
-                        "target": "心脾两虚",
-                        "relation": "MANIFESTS_AS",
-                        "display": "可辨为",
-                        "confidence": 0.78,
-                    }
-                )
-            if "失眠" in names and "心脾两虚" in names:
-                relations.append(
-                    {
-                        "source": "失眠",
-                        "target": "心脾两虚",
-                        "relation": "MANIFESTS_AS",
-                        "display": "可辨为",
-                        "confidence": 0.78,
-                    }
-                )
-            if "不寐" in names and "心脾两虚" in names:
-                relations.append(
-                    {
-                        "source": "不寐",
-                        "target": "心脾两虚",
-                        "relation": "MANIFESTS_AS",
-                        "display": "可辨为",
-                        "confidence": 0.78,
-                    }
-                )
-            if "心脾两虚" in names and "补益心脾" in names:
-                relations.append(
-                    {
-                        "source": "心脾两虚",
-                        "target": "补益心脾",
-                        "relation": "RECOMMENDS_TREATMENT",
-                        "display": "治法",
-                        "confidence": 0.78,
-                    }
-                )
-            if "补益心脾" in names and "归脾汤" in names:
-                relations.append(
-                    {
-                        "source": "补益心脾",
-                        "target": "归脾汤",
-                        "relation": "RECOMMENDS_FORMULA",
-                        "display": "推荐方剂",
-                        "confidence": 0.78,
-                    }
-                )
-            if "心脾两虚" in names and "归脾汤" in names:
-                relations.append(
-                    {
-                        "source": "心脾两虚",
-                        "target": "归脾汤",
-                        "relation": "RECOMMENDS_FORMULA",
-                        "display": "推荐方剂",
-                        "confidence": 0.78,
-                    }
-                )
-            if "归脾汤" in names and "党参" in names:
-                relations.append(
-                    {
-                        "source": "归脾汤",
-                        "target": "党参",
-                        "relation": "COMPOSED_OF",
-                        "display": "组成",
-                        "confidence": 0.78,
-                    }
-                )
-            payload = {"entities": entities, "relations": relations}
+            payload = _deterministic_tcm_extraction_payload(text)
         return httpx.Response(
             200,
             request=httpx.Request("POST", url),
             json={"choices": [{"message": {"content": json_module_dumps(payload)}}]},
         )
+
+
+def _deterministic_tcm_extraction_payload(text: str) -> dict:
+    entities = []
+    for name, label in [
+        ("头痛", "Symptom"),
+        ("发热头痛", "Symptom"),
+        ("不寐", "Symptom"),
+        ("失眠", "Symptom"),
+        ("心脾两虚", "Syndrome"),
+        ("补益心脾", "Treatment"),
+        ("归脾汤", "Formula"),
+        ("党参", "Herb"),
+    ]:
+        if name in text:
+            entities.append({"name": name, "label": label, "confidence": 0.8})
+    relations = []
+    names = {entity["name"] for entity in entities}
+    if "头痛" in names and "心脾两虚" in names:
+        relations.append(
+            {
+                "source": "头痛",
+                "target": "心脾两虚",
+                "relation": "MANIFESTS_AS",
+                "display": "可辨为",
+                "confidence": 0.78,
+            }
+        )
+    if "失眠" in names and "心脾两虚" in names:
+        relations.append(
+            {
+                "source": "失眠",
+                "target": "心脾两虚",
+                "relation": "MANIFESTS_AS",
+                "display": "可辨为",
+                "confidence": 0.78,
+            }
+        )
+    if "不寐" in names and "心脾两虚" in names:
+        relations.append(
+            {
+                "source": "不寐",
+                "target": "心脾两虚",
+                "relation": "MANIFESTS_AS",
+                "display": "可辨为",
+                "confidence": 0.78,
+            }
+        )
+    if "心脾两虚" in names and "补益心脾" in names:
+        relations.append(
+            {
+                "source": "心脾两虚",
+                "target": "补益心脾",
+                "relation": "RECOMMENDS_TREATMENT",
+                "display": "治法",
+                "confidence": 0.78,
+            }
+        )
+    if "补益心脾" in names and "归脾汤" in names:
+        relations.append(
+            {
+                "source": "补益心脾",
+                "target": "归脾汤",
+                "relation": "RECOMMENDS_FORMULA",
+                "display": "推荐方剂",
+                "confidence": 0.78,
+            }
+        )
+    if "心脾两虚" in names and "归脾汤" in names:
+        relations.append(
+            {
+                "source": "心脾两虚",
+                "target": "归脾汤",
+                "relation": "RECOMMENDS_FORMULA",
+                "display": "推荐方剂",
+                "confidence": 0.78,
+            }
+        )
+    if "归脾汤" in names and "党参" in names:
+        relations.append(
+            {
+                "source": "归脾汤",
+                "target": "党参",
+                "relation": "COMPOSED_OF",
+                "display": "组成",
+                "confidence": 0.78,
+            }
+        )
+    return {"entities": entities, "relations": relations}
 
 
 def _hash_embedding(text: str, dimensions: int) -> list[float]:
@@ -409,6 +510,58 @@ def _normalize_batch_extraction_payload(payload: dict) -> dict:
     return {"items": []}
 
 
+def _selected_resolution_pairs(
+    payload: dict,
+    requested_pairs: Sequence[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    requested = {tuple(pair): tuple(pair) for pair in requested_pairs}
+    requested.update({(target, source): (source, target) for source, target in requested_pairs})
+    selected: list[tuple[str, str]] = []
+    items = payload.get("pairs", [])
+    if not isinstance(items, list):
+        return selected
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        same_value = item.get("same", item.get("same_entity", item.get("is_same", False)))
+        if not _truthy_resolution_value(same_value):
+            continue
+        source = str(item.get("source", item.get("entity_a", item.get("left", "")))).strip()
+        target = str(item.get("target", item.get("entity_b", item.get("right", "")))).strip()
+        pair = requested.get((source, target))
+        if pair and pair not in selected:
+            selected.append(pair)
+    return selected
+
+
+def _truthy_resolution_value(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "y", "same", "1", "是", "同一"}
+    return False
+
+
+def _normalize_community_report_payload(payload: dict) -> dict:
+    findings = payload.get("findings", [])
+    if not isinstance(findings, list):
+        findings = []
+    rating = payload.get("rating", 0.0)
+    try:
+        rating = float(rating)
+    except (TypeError, ValueError):
+        rating = 0.0
+    return {
+        "title": str(payload.get("title") or "社区报告"),
+        "summary": str(payload.get("summary") or payload.get("report") or ""),
+        "findings": [finding for finding in findings if isinstance(finding, (dict, str))],
+        "rating": rating,
+        "rating_explanation": str(payload.get("rating_explanation") or ""),
+    }
+
+
 def _focus_text_window(text: str, hints: Sequence[str], window: int = 700) -> str:
     compact = text.strip()
     positions = [
@@ -427,3 +580,7 @@ def _focus_text_window(text: str, hints: Sequence[str], window: int = 700) -> st
 
 def json_module_dumps(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False)
+
+
+def json_module_loads(payload: str):
+    return json.loads(payload)

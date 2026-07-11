@@ -7,8 +7,15 @@ import networkx as nx
 
 from app.models.graph import GraphEdge, GraphNode
 
+try:
+    from graspologic.partition import hierarchical_leiden as _hierarchical_leiden
+except ImportError:
+    _hierarchical_leiden = None
+
 
 LOW_VALUE_LABELS = {"Dose", "Alias", "Source", "Category", "DistributionArea"}
+DEFAULT_LEIDEN_MAX_CLUSTER_SIZE = 12
+DEFAULT_LEIDEN_SEED = 0xDEADBEEF
 
 LABEL_WEIGHTS = {
     "Formula": 1.45,
@@ -58,6 +65,7 @@ class NodeAnalytics:
     pagerank: float
     component_id: int
     community_id: int
+    community_levels: dict[str, int]
     visual_weight: float
     label_weight: float
 
@@ -77,6 +85,7 @@ class GraphAnalyticsResult:
                     "pagerank": analytics.pagerank,
                     "component_id": analytics.component_id,
                     "community_id": analytics.community_id,
+                    "community_levels": _community_level_tags(analytics.community_levels),
                     "visual_weight": analytics.visual_weight,
                     "label_weight": analytics.label_weight,
                 }
@@ -100,7 +109,7 @@ class GraphAnalyticsService:
 
         pagerank = _pagerank(graph)
         component_by_node = _components(graph)
-        community_by_node = _communities(graph)
+        community_by_node, community_levels_by_node = _communities(graph)
         max_pagerank = max(pagerank.values(), default=0.0)
 
         by_node_id: dict[str, NodeAnalytics] = {}
@@ -116,6 +125,10 @@ class GraphAnalyticsService:
                 pagerank=round(pagerank_value, 10),
                 component_id=component_by_node.get(node.id, 0),
                 community_id=community_by_node.get(node.id, component_by_node.get(node.id, 0)),
+                community_levels=community_levels_by_node.get(
+                    node.id,
+                    {"0": community_by_node.get(node.id, component_by_node.get(node.id, 0))},
+                ),
                 visual_weight=round(visual_weight, 6),
                 label_weight=label_weight,
             )
@@ -166,9 +179,11 @@ def _components(graph: nx.Graph) -> dict[str, int]:
     return component_by_node
 
 
-def _communities(graph: nx.Graph) -> dict[str, int]:
+def _communities(graph: nx.Graph) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
     community_by_node: dict[str, int] = {}
+    community_levels_by_node: dict[str, dict[str, int]] = {}
     next_community_id = 0
+    next_level_ids: dict[int, int] = {}
     components = [
         graph.subgraph(component).copy()
         for component in nx.connected_components(graph)
@@ -180,7 +195,10 @@ def _communities(graph: nx.Graph) -> dict[str, int]:
         )
     )
     for component in components:
-        if component.number_of_nodes() <= 6 or component.number_of_edges() == 0:
+        leiden_levels = _leiden_level_communities(component)
+        if leiden_levels is not None:
+            communities = leiden_levels[0]
+        elif component.number_of_nodes() <= 6 or component.number_of_edges() == 0:
             communities = [sorted(component.nodes)]
         else:
             try:
@@ -193,7 +211,70 @@ def _communities(graph: nx.Graph) -> dict[str, int]:
                 communities = [sorted(component.nodes)]
         communities.sort(key=lambda community: (-len(community), community[0] if community else ""))
         for community in communities:
+            assigned_community_id = next_community_id
             for node_id in community:
-                community_by_node[node_id] = next_community_id
+                community_by_node[node_id] = assigned_community_id
+                community_levels_by_node.setdefault(node_id, {})["0"] = assigned_community_id
             next_community_id += 1
-    return community_by_node
+        if leiden_levels is None:
+            continue
+        for level, level_communities in sorted(leiden_levels.items()):
+            if level == 0:
+                continue
+            next_level_id = next_level_ids.get(level, 0)
+            for community in sorted(
+                level_communities,
+                key=lambda item: (-len(item), item[0] if item else ""),
+            ):
+                assigned_level_id = next_level_id
+                for node_id in community:
+                    community_levels_by_node.setdefault(node_id, {})[str(level)] = assigned_level_id
+                next_level_id += 1
+            next_level_ids[level] = next_level_id
+    return community_by_node, community_levels_by_node
+
+
+def _community_level_tags(community_levels: dict[str, int]) -> list[str]:
+    return [
+        f"{level}:{community_id}"
+        for level, community_id in sorted(
+            community_levels.items(),
+            key=lambda item: int(item[0]) if item[0].isdigit() else item[0],
+        )
+    ]
+
+
+def _leiden_level_communities(graph: nx.Graph) -> dict[int, list[list[str]]] | None:
+    if _hierarchical_leiden is None or graph.number_of_edges() == 0:
+        return None
+    try:
+        partitions = _hierarchical_leiden(
+            graph,
+            max_cluster_size=DEFAULT_LEIDEN_MAX_CLUSTER_SIZE,
+            random_seed=DEFAULT_LEIDEN_SEED,
+        )
+    except Exception:
+        return None
+
+    clusters: dict[int, dict[int, list[str]]] = {}
+    for partition in partitions:
+        level = int(getattr(partition, "level", 0))
+        node_id = str(getattr(partition, "node", ""))
+        if node_id not in graph:
+            continue
+        cluster_id = int(getattr(partition, "cluster"))
+        clusters.setdefault(level, {}).setdefault(cluster_id, []).append(node_id)
+
+    graph_nodes = set(str(node_id) for node_id in graph.nodes)
+    if not clusters or 0 not in clusters:
+        return None
+    results: dict[int, list[list[str]]] = {}
+    for level, level_clusters in sorted(clusters.items()):
+        covered_nodes = {node_id for nodes in level_clusters.values() for node_id in nodes}
+        if covered_nodes != graph_nodes:
+            continue
+        results[level] = [
+            sorted(nodes)
+            for _, nodes in sorted(level_clusters.items())
+        ]
+    return results if 0 in results else None

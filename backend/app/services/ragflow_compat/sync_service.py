@@ -42,6 +42,9 @@ class RagflowRetrievalSyncService:
         chunk_batch_size: int = 1000,
         build_chunk_terms: bool = False,
         graph_service: GraphService | None = None,
+        write_graph_artifacts: bool = True,
+        mark_resolution_phase: bool = True,
+        mark_community_phase: bool = True,
     ):
         self.ingestion_repository = ingestion_repository
         self.retrieval_repository = retrieval_repository
@@ -50,6 +53,9 @@ class RagflowRetrievalSyncService:
         self.chunk_batch_size = chunk_batch_size
         self.build_chunk_terms = build_chunk_terms
         self.graph_service = graph_service
+        self.write_graph_artifacts = write_graph_artifacts
+        self.mark_resolution_phase = mark_resolution_phase
+        self.mark_community_phase = mark_community_phase
 
     def rebuild_from_ingestion(self) -> dict[str, int]:
         sources = self.ingestion_repository.list_sources()
@@ -85,6 +91,8 @@ class RagflowRetrievalSyncService:
             )
             community_reports = self._community_reports_from_graph(self.graph_service)
             graph_artifacts = self._graph_artifacts_from_graph(self.graph_service)
+            if not self.write_graph_artifacts:
+                graph_artifacts = []
         else:
             retrieval_entities = [
                 self._entity_from_candidate(source_id, entity)
@@ -98,7 +106,9 @@ class RagflowRetrievalSyncService:
             graph_artifacts = []
         retrieval_type_samples = self._type_samples(retrieval_entities)
 
-        self.retrieval_repository.clear_rebuild_tables()
+        self.retrieval_repository.clear_rebuild_tables(
+            include_graph_artifacts=self.write_graph_artifacts
+        )
         self.retrieval_repository.append_documents(retrieval_documents)
         chunk_count = 0
         for chunk_batch in self.ingestion_repository.iter_chunk_batches(self.chunk_batch_size):
@@ -121,8 +131,9 @@ class RagflowRetrievalSyncService:
         self.retrieval_repository.append_community_reports(community_reports)
         self.retrieval_repository.append_graph_artifacts(graph_artifacts)
         self.retrieval_repository.append_type_samples(retrieval_type_samples)
-        if graph_branch:
+        if graph_branch and self.mark_resolution_phase:
             self.retrieval_repository.set_graphrag_phase_marker(PHASE_RESOLUTION)
+        if graph_branch and self.mark_community_phase:
             self.retrieval_repository.set_graphrag_phase_marker(PHASE_COMMUNITY)
         return {
             "documents": len(retrieval_documents),
@@ -316,21 +327,29 @@ class RagflowRetrievalSyncService:
                 "report": summary.summary,
                 "evidences": "；".join(summary.entities),
                 "title": summary.title,
+                "findings": summary.findings or [],
+                "rating": summary.rating,
+                "rating_explanation": summary.rating_explanation,
             }
             reports.append(
                 RetrievalCommunityReport(
-                    report_id=f"community:{community_id}",
+                    report_id=_community_report_id(summary),
                     title=summary.title,
                     content_with_weight=json.dumps(content, ensure_ascii=False),
                     summary=summary.summary,
                     evidences=content["evidences"],
                     entities_kwd=summary.entities,
                     weight_flt=summary.weight,
-                    source_id=_community_source_ids(graph_service, community_id),
+                    source_id=_community_source_ids(graph_service, summary),
                     metadata={
                         "community_id": community_id,
+                        "level": summary.level,
                         "community_size": summary.size,
                         "label_counts": summary.label_counts,
+                        "findings": summary.findings or [],
+                        "rating": summary.rating,
+                        "rating_explanation": summary.rating_explanation,
+                        "source_node_ids": summary.source_node_ids,
                     },
                 )
             )
@@ -460,19 +479,27 @@ def _chunk_ids_from_evidence_ids(evidence_ids: list[str]) -> list[str]:
     return chunk_ids
 
 
-def _community_source_ids(graph_service: GraphService, community_id: int) -> list[str]:
+def _community_report_id(summary) -> str:
+    if int(getattr(summary, "level", 0) or 0) <= 0:
+        return f"community:{summary.community_id}"
+    return f"community:{summary.level}:{summary.community_id}"
+
+
+def _community_source_ids(graph_service: GraphService, summary) -> list[str]:
     source_ids: list[str] = []
+    community_id = int(summary.community_id)
+    source_node_ids = set(summary.source_node_ids or [])
     node_ids = {
         node.id
         for node in graph_service.nodes
-        if int(node.properties.get("community_id", -1)) == community_id
+        if node.id in source_node_ids or int(node.properties.get("community_id", -1)) == community_id
     }
     for node in graph_service.nodes:
         if node.id in node_ids:
-            source_ids.extend(_source_chunks_from_graph_node(node))
+            source_ids.extend(_source_groups_from_node(node))
     for edge in graph_service.edges:
         if edge.source in node_ids and edge.target in node_ids:
-            source_ids.extend(edge.evidence_ids)
+            source_ids.extend(_source_groups_from_evidence(edge.evidence_ids))
     return _unique(source_ids)
 
 

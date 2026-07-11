@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 VectorStatus = Literal["missing", "queued", "embedded", "failed"]
+GraphRagBuildStatus = Literal["running", "completed", "failed", "canceled"]
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,19 @@ class RetrievalTypeSamples:
     sample_entities: list[str]
     sample_count: int
     updated_at: str
+
+
+@dataclass(frozen=True)
+class RetrievalGraphRagBuildRun:
+    run_id: str
+    status: GraphRagBuildStatus
+    started_at: str = ""
+    finished_at: str = ""
+    cursor: str = ""
+    total: int = 0
+    processed: int = 0
+    failed: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

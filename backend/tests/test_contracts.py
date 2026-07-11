@@ -50,6 +50,12 @@ def test_settings_env_file_points_to_repo_root():
     assert Path(env_file).resolve() == REPO_ROOT / ".env"
 
 
+def test_settings_defaults_to_ragflow_compatible_retrieval():
+    settings = Settings(_env_file=None)
+
+    assert settings.retrieval_engine == "ragflow_compat"
+
+
 def test_vite_html_entrypoint_exists():
     html = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
     assert 'src="/src/main.tsx"' in html
@@ -106,6 +112,33 @@ def test_query_response_contains_answer_graph_and_evidence():
 def test_query_request_trims_question():
     request = QueryRequest(question="  党参有什么功效？  ")
     assert request.question == "党参有什么功效？"
+
+
+def test_query_request_accepts_community_report_topn():
+    request = QueryRequest(question="失眠怎么辨证？", comm_topn=2)
+
+    assert request.comm_topn == 2
+
+
+def test_query_request_accepts_graphrag_context_token_budget():
+    request = QueryRequest(question="失眠怎么辨证？", max_token=128)
+
+    assert request.max_token == 128
+
+
+def test_query_request_accepts_kg_retrieval_tuning_parameters():
+    request = QueryRequest(
+        question="失眠怎么辨证？",
+        ent_topn=8,
+        rel_topn=9,
+        ent_sim_threshold=0.25,
+        rel_sim_threshold=0.35,
+    )
+
+    assert request.ent_topn == 8
+    assert request.rel_topn == 9
+    assert request.ent_sim_threshold == 0.25
+    assert request.rel_sim_threshold == 0.35
 
 
 def test_query_request_rejects_blank_question_after_trim():

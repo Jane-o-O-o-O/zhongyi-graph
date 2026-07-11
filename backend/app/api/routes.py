@@ -1,8 +1,23 @@
-from fastapi import APIRouter, UploadFile
+import json
+from dataclasses import asdict
+from pathlib import Path
+import tempfile
+
+import httpx
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 
 from app.core.config import get_settings
+from app.models.graph import GraphEdge, GraphNode
 from app.models.ingestion import IngestionJob, SourceManifest
-from app.models.query import GraphOverviewResponse, QueryRequest, QueryResponse
+from app.models.query import (
+    GraphBuildRequest,
+    GraphBuildRunResponse,
+    GraphBuildRunsResponse,
+    GraphBuildResponse,
+    GraphOverviewResponse,
+    QueryRequest,
+    QueryResponse,
+)
 from app.services.ingestion_service import IngestionService
 from app.services.document_parser import DocumentParser
 from app.services.ingestion_repository import IngestionRepository
@@ -10,18 +25,54 @@ from app.services.object_storage import LocalObjectStorage, MinioObjectStorage
 from app.services.ocr_client import OcrClient
 from app.services.neo4j_publisher import Neo4jPublisher
 from app.services.chunk_retriever import ChunkRetriever
+from app.services.graph_service import GraphService
 from app.services.question_service import QuestionService
 from app.services.graph_extractor import GraphExtractor
 from app.services.model_clients import StructuredExtractionClient
 from app.services.ragflow_compat.doc_store import RagflowDocStore, RagflowVectorSearchClient
+from app.services.ragflow_compat.community_reports import RagflowGraphCommunityReportService
+from app.services.ragflow_compat.entity_resolution import (
+    LlmEntityResolutionDecider,
+    RagflowGraphEntityResolutionService,
+)
 from app.services.ragflow_compat.fulltext import RagflowFulltextRetriever
+from app.services.ragflow_compat.graph_build_service import (
+    RagflowGraphBuildAlreadyRunningError,
+    RagflowGraphBuildService,
+)
 from app.services.ragflow_compat.kg_search import RagflowKgSearch
 from app.services.ragflow_compat.repository import RagflowRetrievalRepository
 from app.services.ragflow_compat.retrieval_service import RagflowCompatibleRetrievalService
 from app.services.ragflow_compat.sync_service import RagflowRetrievalSyncService
-from pathlib import Path
-import httpx
-import tempfile
+
+
+def _empty_retrieval_seed_summary() -> dict[str, int]:
+    return {
+        "documents": 0,
+        "chunks": 0,
+        "kg_entities": 0,
+        "kg_relations": 0,
+        "community_reports": 0,
+        "graph_artifacts": 0,
+    }
+
+
+def _seed_ragflow_retrieval_from_graph_if_empty(
+    *,
+    ingestion_repository: IngestionRepository,
+    retrieval_repository: RagflowRetrievalRepository,
+    graph_service: GraphService,
+) -> dict[str, int]:
+    if not graph_service.nodes:
+        return _empty_retrieval_seed_summary()
+    if retrieval_repository.audit().kg_entities > 0:
+        return _empty_retrieval_seed_summary()
+    return RagflowRetrievalSyncService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=retrieval_repository,
+        graph_service=graph_service,
+    ).rebuild_from_ingestion()
+
 
 router = APIRouter(prefix="/api")
 settings = get_settings()
@@ -124,6 +175,7 @@ ragflow_retrieval_service = RagflowCompatibleRetrievalService(
     ),
     kg_search=RagflowKgSearch(ragflow_doc_store),
     llm_client=question_service.llm_client,
+    query_rewriter=structured_extractor,
     qdrant_stats_provider=lambda: _qdrant_collection_stats(
         settings.qdrant_url,
         settings.ragflow_qdrant_collection,
@@ -136,6 +188,15 @@ try:
     restored_artifact = ingestion_service.restore_published_artifact()
     if restored_artifact.nodes or restored_artifact.edges or restored_artifact.evidence:
         question_service.publish_artifact(restored_artifact)
+except Exception:
+    pass
+
+try:
+    _seed_ragflow_retrieval_from_graph_if_empty(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=ragflow_repository,
+        graph_service=question_service.graph_service,
+    )
 except Exception:
     pass
 
@@ -156,7 +217,15 @@ def health() -> dict:
 
 @router.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest) -> QueryResponse:
-    return question_service.answer(request.question)
+    return question_service.answer(
+        request.question,
+        comm_topn=request.comm_topn,
+        max_token=request.max_token,
+        ent_topn=request.ent_topn,
+        rel_topn=request.rel_topn,
+        ent_sim_threshold=request.ent_sim_threshold,
+        rel_sim_threshold=request.rel_sim_threshold,
+    )
 
 
 @router.get("/graph/overview", response_model=GraphOverviewResponse)
@@ -216,6 +285,132 @@ def rebuild_ragflow_retrieval_index() -> dict:
     return {"status": "ok", **summary}
 
 
+@router.post("/retrieval/graphrag/build", response_model=GraphBuildResponse)
+def build_ragflow_graphrag(request: GraphBuildRequest | None = None) -> GraphBuildResponse:
+    request = request or GraphBuildRequest()
+    try:
+        summary = _graphrag_build_service(request).build(
+            request.source_ids,
+            with_resolution=request.with_resolution,
+            with_community=request.with_community,
+        )
+    except RagflowGraphBuildAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    graph_refreshed = _refresh_question_graph_from_ragflow_global_artifact()
+    return GraphBuildResponse(
+        status="ok",
+        graph_refreshed=graph_refreshed,
+        **asdict(summary),
+    )
+
+
+@router.post("/retrieval/graphrag/build/async", response_model=GraphBuildRunResponse)
+def build_ragflow_graphrag_async(
+    background_tasks: BackgroundTasks,
+    request: GraphBuildRequest | None = None,
+) -> GraphBuildRunResponse:
+    request = request or GraphBuildRequest()
+    service = _graphrag_build_service(request)
+    try:
+        submission = service.submit(
+            request.source_ids,
+            with_resolution=request.with_resolution,
+            with_community=request.with_community,
+            execution_mode="background",
+        )
+    except RagflowGraphBuildAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background_tasks.add_task(_run_ragflow_graphrag_background, service, submission)
+    return GraphBuildRunResponse(**asdict(submission.run))
+
+
+def _graphrag_build_service(request: GraphBuildRequest) -> RagflowGraphBuildService:
+    return RagflowGraphBuildService(
+        ingestion_repository=ingestion_repository,
+        retrieval_repository=ragflow_repository,
+        graph_extractor=_graph_extractor_for_method(
+            request.method,
+            request.batch_chunk_token_size,
+        ),
+        entity_resolution_service=RagflowGraphEntityResolutionService(
+            decider=LlmEntityResolutionDecider(structured_extractor)
+        ),
+        community_report_service=RagflowGraphCommunityReportService(
+            report_client=structured_extractor
+        ),
+        retry_attempts=request.retry_attempts,
+        retry_backoff_seconds=request.retry_backoff_seconds,
+        retry_backoff_max_seconds=request.retry_backoff_max_seconds,
+        source_timeout_seconds=request.source_timeout_seconds,
+        batch_chunk_token_size=request.batch_chunk_token_size,
+        method=request.method,
+    )
+
+
+def _graph_extractor_for_method(method: str, batch_chunk_token_size: int = 4096):
+    try:
+        return GraphExtractor(
+            llm_extractor=structured_extractor,
+            method=method,
+            batch_token_limit=batch_chunk_token_size,
+        )
+    except TypeError:
+        try:
+            return GraphExtractor(llm_extractor=structured_extractor, method=method)
+        except TypeError:
+            return GraphExtractor(llm_extractor=structured_extractor)
+
+
+def _run_ragflow_graphrag_background(service, submission) -> None:
+    try:
+        service.run_submitted(submission)
+        _refresh_question_graph_from_ragflow_global_artifact()
+    except Exception:
+        return
+
+
+@router.get("/retrieval/graphrag/runs/{run_id}", response_model=GraphBuildRunResponse)
+def get_ragflow_graphrag_run(run_id: str) -> GraphBuildRunResponse:
+    run = ragflow_repository.get_graphrag_build_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="GraphRAG build run not found")
+    return GraphBuildRunResponse(**asdict(run))
+
+
+@router.get("/retrieval/graphrag/runs", response_model=GraphBuildRunsResponse)
+def list_ragflow_graphrag_runs(limit: int = 20) -> GraphBuildRunsResponse:
+    runs = ragflow_repository.list_graphrag_build_runs(limit=limit)
+    return GraphBuildRunsResponse(
+        runs=[GraphBuildRunResponse(**asdict(run)) for run in runs]
+    )
+
+
+@router.post("/retrieval/graphrag/runs/{run_id}/cancel")
+def cancel_ragflow_graphrag_run(run_id: str) -> dict:
+    if not ragflow_repository.request_graphrag_build_cancel(run_id):
+        raise HTTPException(status_code=404, detail="GraphRAG build run not running")
+    return {
+        "status": "ok",
+        "run_id": run_id,
+        "cancel_requested": True,
+    }
+
+
+def _refresh_question_graph_from_ragflow_global_artifact() -> bool:
+    artifact = ragflow_repository.get_graph_artifact("graph:global")
+    if not artifact:
+        return False
+    payload = json.loads(artifact.content_with_weight)
+    nodes = [GraphNode.model_validate(node) for node in payload.get("nodes", [])]
+    edges = [GraphEdge.model_validate(edge) for edge in payload.get("edges", [])]
+    if not nodes:
+        return False
+    graph_service = GraphService(nodes, edges)
+    question_service.graph_service = graph_service
+    question_service.hybrid_retriever.graph_service = graph_service
+    return True
+
+
 @router.get("/retrieval/audit")
 def audit_ragflow_retrieval_index() -> dict:
     return ragflow_retrieval_service.status()
@@ -259,6 +454,14 @@ def publish_ingestion_sources(source_ids: list[str]) -> dict:
             graph_persisted = False
     try:
         question_service.vector_index.upsert_payloads_qdrant(artifact.vector_payloads)
+    except Exception:
+        pass
+    try:
+        RagflowRetrievalSyncService(
+            ingestion_repository=ingestion_repository,
+            retrieval_repository=ragflow_repository,
+            graph_service=question_service.graph_service,
+        ).rebuild_from_ingestion()
     except Exception:
         pass
     return {

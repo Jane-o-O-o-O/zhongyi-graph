@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "tcm_knowledge"
     ragflow_qdrant_collection: str = "tcm_ragflow_retrieval"
-    retrieval_engine: str = "legacy"
+    retrieval_engine: str = "ragflow_compat"
     ragflow_vector_weight: float = 0.7
     ragflow_token_weight: float = 0.3
     ragflow_rerank_weight: float = 0.5

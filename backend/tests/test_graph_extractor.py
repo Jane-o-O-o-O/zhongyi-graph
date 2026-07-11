@@ -38,6 +38,33 @@ def test_graph_extractor_extracts_tcm_candidates_from_llm_output():
     assert all(relation.evidence_chunk_ids == [chunk.chunk_id] for relation in relations)
 
 
+def test_graph_extractor_ner_method_extracts_entities_without_llm():
+    chunk = DocumentChunk(
+        chunk_id="chunk:source:uploaded:ner:0001",
+        source_id="source:uploaded:ner",
+        page_id="page:source:uploaded:ner:1",
+        chunk_index=1,
+        content="白芍具有养血敛阴功效，常用于失眠。",
+    )
+
+    entities, relations = GraphExtractor(method="ner").extract([chunk])
+
+    assert {
+        (entity.name, entity.label)
+        for entity in entities
+    } >= {
+        ("白芍", "Herb"),
+        ("养血敛阴", "Function"),
+        ("失眠", "Symptom"),
+    }
+    assert any(
+        relation.source_entity_id == "entity:herb:白芍"
+        and relation.target_entity_id == "entity:function:养血敛阴"
+        and relation.relation == "RELATED_TO"
+        for relation in relations
+    )
+
+
 def test_graph_extractor_links_insomnia_synonym_to_clinical_path():
     chunk = DocumentChunk(
         chunk_id="chunk:source:uploaded:abc:0001",
@@ -103,6 +130,231 @@ def test_graph_extractor_uses_llm_structured_output_for_new_entities():
         relation.source_entity_id == "entity:symptom:头痛"
         and relation.target_entity_id == "entity:syndrome:心脾两虚"
         and relation.relation == "MANIFESTS_AS"
+        for relation in relations
+    )
+
+
+def test_graph_extractor_general_method_uses_batch_extraction_units():
+    class FakeBatchExtractor:
+        def __init__(self):
+            self.batch_calls = []
+            self.chunk_calls = 0
+
+        def extract_chunk(self, text, hints=None):
+            self.chunk_calls += 1
+            raise AssertionError("general method should use batch extraction")
+
+        def extract_chunks_batch(self, items):
+            self.batch_calls.append(items)
+            return {
+                "items": [
+                    {
+                        "unit_id": items[0]["unit_id"],
+                        "entities": [
+                            {"name": "失眠", "label": "Symptom", "confidence": 0.91},
+                            {"name": "心脾两虚", "label": "Syndrome", "confidence": 0.88},
+                        ],
+                        "relations": [
+                            {
+                                "source": "失眠",
+                                "target": "心脾两虚",
+                                "relation": "MANIFESTS_AS",
+                                "display": "可辨为",
+                                "confidence": 0.82,
+                            }
+                        ],
+                    },
+                    {
+                        "unit_id": items[1]["unit_id"],
+                        "entities": [
+                            {"name": "归脾汤", "label": "Formula", "confidence": 0.86},
+                            {"name": "党参", "label": "Herb", "confidence": 0.84},
+                        ],
+                        "relations": [
+                            {
+                                "source": "归脾汤",
+                                "target": "党参",
+                                "relation": "COMPOSED_OF",
+                                "display": "组成",
+                                "confidence": 0.81,
+                            }
+                        ],
+                    },
+                ]
+            }
+
+    extractor = FakeBatchExtractor()
+    chunks = [
+        DocumentChunk(
+            chunk_id="chunk:general:1",
+            source_id="source:general",
+            page_id="page:general:1",
+            chunk_index=1,
+            content="失眠可辨为心脾两虚。",
+        ),
+        DocumentChunk(
+            chunk_id="chunk:general:2",
+            source_id="source:general",
+            page_id="page:general:1",
+            chunk_index=2,
+            content="归脾汤由党参等药组成。",
+        ),
+    ]
+
+    entities, relations = GraphExtractor(
+        llm_extractor=extractor,
+        method="general",
+    ).extract(chunks)
+
+    assert extractor.chunk_calls == 0
+    assert extractor.batch_calls == [
+        [
+            {"unit_id": "chunk:general:1", "text": "失眠可辨为心脾两虚。"},
+            {"unit_id": "chunk:general:2", "text": "归脾汤由党参等药组成。"},
+        ]
+    ]
+    assert {entity.name for entity in entities} == {"失眠", "心脾两虚", "归脾汤", "党参"}
+    assert any(
+        relation.relation == "MANIFESTS_AS"
+        and relation.evidence_chunk_ids == ["chunk:general:1"]
+        for relation in relations
+    )
+    assert any(
+        relation.relation == "COMPOSED_OF"
+        and relation.evidence_chunk_ids == ["chunk:general:2"]
+        for relation in relations
+    )
+
+
+def test_graph_extractor_general_method_splits_batches_by_token_limit():
+    class FakeBatchExtractor:
+        def __init__(self):
+            self.batch_calls = []
+
+        def extract_chunks_batch(self, items):
+            self.batch_calls.append(items)
+            return {
+                "items": [
+                    {
+                        "unit_id": item["unit_id"],
+                        "entities": [
+                            {
+                                "name": f"实体{item['unit_id'].rsplit(':', 1)[-1]}",
+                                "label": "Syndrome",
+                                "confidence": 0.8,
+                            }
+                        ],
+                        "relations": [],
+                    }
+                    for item in items
+                ]
+            }
+
+    extractor = FakeBatchExtractor()
+    chunks = [
+        DocumentChunk(
+            chunk_id="chunk:batch:1",
+            source_id="source:batch",
+            page_id="page:batch:1",
+            chunk_index=1,
+            content="第一段辨证内容。",
+            token_count=280,
+        ),
+        DocumentChunk(
+            chunk_id="chunk:batch:2",
+            source_id="source:batch",
+            page_id="page:batch:1",
+            chunk_index=2,
+            content="第二段辨证内容。",
+            token_count=260,
+        ),
+        DocumentChunk(
+            chunk_id="chunk:batch:3",
+            source_id="source:batch",
+            page_id="page:batch:1",
+            chunk_index=3,
+            content="第三段辨证内容。",
+            token_count=240,
+        ),
+    ]
+
+    entities, relations = GraphExtractor(
+        llm_extractor=extractor,
+        method="general",
+        batch_token_limit=600,
+    ).extract(chunks)
+
+    assert extractor.batch_calls == [
+        [
+            {"unit_id": "chunk:batch:1", "text": "第一段辨证内容。"},
+            {"unit_id": "chunk:batch:2", "text": "第二段辨证内容。"},
+        ],
+        [{"unit_id": "chunk:batch:3", "text": "第三段辨证内容。"}],
+    ]
+    assert {entity.name for entity in entities} == {"实体1", "实体2", "实体3"}
+    assert relations == []
+
+
+def test_graph_extractor_general_method_parses_ragflow_tuple_records_with_gleaning():
+    class FakeRagflowGeneralChat:
+        def __init__(self):
+            self.calls = []
+            self.responses = [
+                (
+                    '("entity"<|>"失眠"<|>"Symptom"<|>"睡眠障碍")##'
+                    '("entity"<|>"心脾两虚"<|>"Syndrome"<|>"心脾亏虚证候")##'
+                    '("relationship"<|>"失眠"<|>"心脾两虚"<|>"失眠可辨为心脾两虚"<|>"可辨为"<|>2.0)'
+                    "<|COMPLETE|>"
+                ),
+                (
+                    '("entity"<|>"归脾汤"<|>"Formula"<|>"补益心脾方剂")##'
+                    '("relationship"<|>"心脾两虚"<|>"归脾汤"<|>"心脾两虚可用归脾汤"<|>"推荐方剂"<|>1.5)'
+                    "<|COMPLETE|>"
+                ),
+                "N",
+            ]
+
+        def chat(self, system, history, gen_conf=None):
+            self.calls.append(
+                {
+                    "system": system,
+                    "history": history,
+                    "gen_conf": gen_conf or {},
+                }
+            )
+            return self.responses.pop(0)
+
+    llm = FakeRagflowGeneralChat()
+    chunk = DocumentChunk(
+        chunk_id="chunk:ragflow-general:1",
+        source_id="source:ragflow-general",
+        page_id="page:ragflow-general:1",
+        chunk_index=1,
+        content="失眠可辨为心脾两虚，方选归脾汤。",
+    )
+
+    entities, relations = GraphExtractor(
+        llm_extractor=llm,
+        method="general",
+    ).extract([chunk])
+
+    assert [call["history"][-1]["content"] for call in llm.calls] == [
+        "Output:",
+        "MANY entities were missed in the last extraction. Add them below using the same format:",
+        "It appears some entities may have still been missed. Answer Y if there are more entities to add, otherwise N.",
+    ]
+    assert {entity.name for entity in entities} == {"失眠", "心脾两虚", "归脾汤"}
+    assert any(
+        relation.source_entity_id == "entity:symptom:失眠"
+        and relation.target_entity_id == "entity:syndrome:心脾两虚"
+        and relation.relation == "MANIFESTS_AS"
+        and relation.evidence_chunk_ids == [chunk.chunk_id]
+        for relation in relations
+    )
+    assert any(
+        relation.source_entity_id == "entity:syndrome:心脾两虚"
+        and relation.target_entity_id == "entity:formula:归脾汤"
+        and relation.relation == "RECOMMENDS_FORMULA"
         for relation in relations
     )
 

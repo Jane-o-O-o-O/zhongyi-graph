@@ -1,20 +1,161 @@
+import re
 from typing import Any
 
 from app.models.ingestion import DocumentChunk, EntityCandidate, RelationCandidate
 
+DEFAULT_GENERAL_BATCH_TOKEN_LIMIT = 4096
+RAGFLOW_TUPLE_DELIMITER = "<|>"
+RAGFLOW_RECORD_DELIMITER = "##"
+RAGFLOW_COMPLETION_DELIMITER = "<|COMPLETE|>"
+RAGFLOW_CONTINUE_PROMPT = (
+    "MANY entities were missed in the last extraction. Add them below using the same format:"
+)
+RAGFLOW_LOOP_PROMPT = (
+    "It appears some entities may have still been missed. Answer Y if there are more entities to add, otherwise N."
+)
+RAGFLOW_MAX_GLEANINGS = 2
+
 
 class GraphExtractor:
-    def __init__(self, llm_extractor=None):
+    def __init__(
+        self,
+        llm_extractor=None,
+        method: str = "light",
+        batch_token_limit: int = DEFAULT_GENERAL_BATCH_TOKEN_LIMIT,
+    ):
         self.llm_extractor = llm_extractor
+        self.method = _normalize_method(method)
+        self.batch_token_limit = max(1, int(batch_token_limit or DEFAULT_GENERAL_BATCH_TOKEN_LIMIT))
 
     def extract(
         self,
         chunks: list[DocumentChunk],
         hint_terms: list[str] | None = None,
     ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        if self.method == "ner":
+            return self._extract_with_ner(chunks)
+        if self.method == "general" and self.llm_extractor:
+            return self._extract_with_general(chunks)
         if self.llm_extractor:
             return self._extract_with_llm(chunks, hint_terms=hint_terms or [])
         return [], []
+
+    def _extract_with_general(
+        self,
+        chunks: list[DocumentChunk],
+    ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        if not hasattr(self.llm_extractor, "extract_chunks_batch"):
+            if hasattr(self.llm_extractor, "chat"):
+                return self._extract_with_ragflow_general(chunks)
+            return self._extract_with_llm(chunks, hint_terms=[])
+        batches = _general_extraction_batches(chunks, self.batch_token_limit)
+        if not batches:
+            return [], []
+        chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
+        entities: dict[str, EntityCandidate] = {}
+        relations: dict[str, RelationCandidate] = {}
+        try:
+            for batch in batches:
+                payload = self.llm_extractor.extract_chunks_batch(batch)
+                for item in payload.get("items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    chunk = chunks_by_id.get(str(item.get("unit_id", "")).strip())
+                    if not chunk:
+                        continue
+                    _merge_extracted_payload(entities, relations, chunk, item)
+        except Exception:
+            return [], []
+        return list(entities.values()), list(relations.values())
+
+    def _extract_with_ragflow_general(
+        self,
+        chunks: list[DocumentChunk],
+    ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        entities: dict[str, EntityCandidate] = {}
+        relations: dict[str, RelationCandidate] = {}
+        for chunk in chunks:
+            if not chunk.content.strip():
+                continue
+            try:
+                extracted = self._extract_ragflow_general_chunk(chunk)
+            except Exception:
+                continue
+            _merge_extracted_payload(entities, relations, chunk, extracted)
+        return list(entities.values()), list(relations.values())
+
+    def _extract_ragflow_general_chunk(self, chunk: DocumentChunk) -> dict:
+        system_prompt = _ragflow_general_prompt(chunk.content)
+        response = _call_ragflow_general_chat(
+            self.llm_extractor,
+            system_prompt,
+            [{"role": "user", "content": "Output:"}],
+            {},
+        )
+        results = response or ""
+        history = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": response or ""},
+        ]
+        for index in range(RAGFLOW_MAX_GLEANINGS):
+            history.append({"role": "user", "content": RAGFLOW_CONTINUE_PROMPT})
+            response = _call_ragflow_general_chat(self.llm_extractor, "", history, {})
+            results += response or ""
+            if index >= RAGFLOW_MAX_GLEANINGS - 1:
+                break
+            history.append({"role": "assistant", "content": response or ""})
+            history.append({"role": "user", "content": RAGFLOW_LOOP_PROMPT})
+            continuation = _call_ragflow_general_chat(
+                self.llm_extractor,
+                "",
+                history,
+                {"max_tokens": 1},
+            )
+            if str(continuation or "").strip().upper() != "Y":
+                break
+            history.append({"role": "assistant", "content": "Y"})
+        return _ragflow_tuple_payload(results)
+
+    def _extract_with_ner(
+        self,
+        chunks: list[DocumentChunk],
+    ) -> tuple[list[EntityCandidate], list[RelationCandidate]]:
+        entities: dict[str, EntityCandidate] = {}
+        relations: dict[str, RelationCandidate] = {}
+        for chunk in chunks:
+            found = _ner_entities(chunk.content)
+            for name, label in found:
+                entity_id = _entity_id(label, name)
+                existing = entities.get(entity_id)
+                chunk_ids = [chunk.chunk_id]
+                if existing:
+                    chunk_ids = sorted(set(existing.source_chunk_ids + chunk_ids))
+                entities[entity_id] = EntityCandidate(
+                    entity_id=entity_id,
+                    name=name,
+                    label=label,
+                    normalized_name=name,
+                    source_chunk_ids=chunk_ids,
+                    confidence=0.65,
+                )
+            for source_name, source_label, target_name, target_label, relation in _ner_relations(found):
+                source_id = _entity_id(source_label, source_name)
+                target_id = _entity_id(target_label, target_name)
+                relation_id = f"relation:{source_id}:{relation}:{target_id}"
+                existing = relations.get(relation_id)
+                evidence_chunk_ids = [chunk.chunk_id]
+                if existing:
+                    evidence_chunk_ids = sorted(set(existing.evidence_chunk_ids + evidence_chunk_ids))
+                relations[relation_id] = RelationCandidate(
+                    relation_id=relation_id,
+                    source_entity_id=source_id,
+                    target_entity_id=target_id,
+                    relation=relation,
+                    display=_display_for_relation(relation),
+                    evidence_chunk_ids=evidence_chunk_ids,
+                    confidence=0.6,
+                )
+        return list(entities.values()), list(relations.values())
 
     def _extract_with_llm(
         self,
@@ -28,60 +169,7 @@ class GraphExtractor:
                 extracted = self.llm_extractor.extract_chunk(chunk.content, hints=hint_terms)
             except Exception:
                 continue
-
-            entity_labels: dict[str, str] = {}
-            canonical_names: dict[str, str] = {}
-            for item in extracted.get("entities", []):
-                raw_name = _first_text(item, "name", "text", "value", "entity", "entity_id")
-                label = _normalize_label(_first_text(item, "label", "type", "category"))
-                name = _canonical_name(raw_name, label)
-                if not name or not label:
-                    continue
-                entity_id = _entity_id(label, name)
-                canonical_names[raw_name] = name
-                entity_labels[name] = label
-                existing = entities.get(entity_id)
-                chunk_ids = [chunk.chunk_id]
-                if existing:
-                    chunk_ids = sorted(set(existing.source_chunk_ids + chunk_ids))
-                entities[entity_id] = EntityCandidate(
-                    entity_id=entity_id,
-                    name=name,
-                    label=label,
-                    normalized_name=name,
-                    source_chunk_ids=chunk_ids,
-                    confidence=float(item.get("confidence") or 0.75),
-                )
-
-            for item in extracted.get("relations", []):
-                raw_source_name = _first_text(item, "source", "subject", "head", "from")
-                raw_target_name = _first_text(item, "target", "object", "tail", "to")
-                source_name = canonical_names.get(raw_source_name, raw_source_name)
-                target_name = canonical_names.get(raw_target_name, raw_target_name)
-                relation = _normalize_relation(str(item.get("relation", "")))
-                display = str(item.get("display", "")).strip() or _display_for_relation(relation)
-                if not source_name or not target_name or not relation:
-                    continue
-                source_label = entity_labels.get(source_name)
-                target_label = entity_labels.get(target_name)
-                if not source_label or not target_label:
-                    continue
-                source_id = _entity_id(source_label, source_name)
-                target_id = _entity_id(target_label, target_name)
-                relation_id = f"relation:{source_id}:{relation}:{target_id}"
-                existing = relations.get(relation_id)
-                evidence_chunk_ids = [chunk.chunk_id]
-                if existing:
-                    evidence_chunk_ids = sorted(set(existing.evidence_chunk_ids + evidence_chunk_ids))
-                relations[relation_id] = RelationCandidate(
-                    relation_id=relation_id,
-                    source_entity_id=source_id,
-                    target_entity_id=target_id,
-                    relation=relation,
-                    display=display,
-                    evidence_chunk_ids=evidence_chunk_ids,
-                    confidence=float(item.get("confidence") or 0.72),
-                )
+            _merge_extracted_payload(entities, relations, chunk, extracted)
         return list(entities.values()), list(relations.values())
 
 
@@ -94,6 +182,194 @@ def _entity_id(label: str, name: str) -> str:
         "Herb": "herb",
     }.get(label, label.lower())
     return f"entity:{label_prefix}:{name}"
+
+
+def _general_extraction_batches(
+    chunks: list[DocumentChunk],
+    token_limit: int,
+) -> list[list[dict[str, str]]]:
+    batches: list[list[dict[str, str]]] = []
+    current_batch: list[dict[str, str]] = []
+    current_tokens = 0
+    for chunk in chunks:
+        content = chunk.content.strip()
+        if not content:
+            continue
+        chunk_tokens = _chunk_token_count(chunk)
+        if current_batch and current_tokens + chunk_tokens > token_limit:
+            batches.append(current_batch)
+            current_batch = []
+            current_tokens = 0
+        current_batch.append({"unit_id": chunk.chunk_id, "text": content})
+        current_tokens += chunk_tokens
+    if current_batch:
+        batches.append(current_batch)
+    return batches
+
+
+def _chunk_token_count(chunk: DocumentChunk) -> int:
+    if chunk.token_count > 0:
+        return chunk.token_count
+    return max(1, len(chunk.content.strip()))
+
+
+def _ragflow_general_prompt(content: str) -> str:
+    return (
+        "You are a traditional Chinese medicine knowledge graph extractor. "
+        "Extract entity and relationship records from the input text using "
+        f"{RAGFLOW_TUPLE_DELIMITER} as tuple delimiter, "
+        f"{RAGFLOW_RECORD_DELIMITER} as record delimiter, and "
+        f"{RAGFLOW_COMPLETION_DELIMITER} when complete. "
+        "Entity records use: (\"entity\"<|>name<|>type<|>description). "
+        "Relationship records use: "
+        "(\"relationship\"<|>source<|>target<|>description<|>keywords<|>weight). "
+        f"Input text: {content}"
+    )
+
+
+def _call_ragflow_general_chat(llm_extractor, system: str, history: list[dict], gen_conf: dict) -> str:
+    chat = getattr(llm_extractor, "chat")
+    history_payload = [dict(item) for item in history]
+    gen_conf_payload = dict(gen_conf)
+    try:
+        response = chat(system, history_payload, gen_conf_payload)
+    except TypeError:
+        response = chat(system, history_payload)
+    if response is None:
+        return ""
+    return response if isinstance(response, str) else str(response)
+
+
+def _ragflow_tuple_payload(text: str) -> dict:
+    entities: list[dict] = []
+    relations: list[dict] = []
+    for record in _ragflow_tuple_records(text):
+        attributes = [
+            _unquote_ragflow_attr(value)
+            for value in record.split(RAGFLOW_TUPLE_DELIMITER)
+            if value.strip()
+        ]
+        if len(attributes) < 4:
+            continue
+        record_type = attributes[0].lower()
+        if record_type == "entity":
+            entities.append(
+                {
+                    "name": attributes[1],
+                    "label": attributes[2],
+                    "description": attributes[3],
+                    "confidence": 0.75,
+                }
+            )
+            continue
+        if record_type != "relationship" or len(attributes) < 5:
+            continue
+        keyword = attributes[4]
+        relation = _normalize_relation(keyword or attributes[3])
+        relations.append(
+            {
+                "source": attributes[1],
+                "target": attributes[2],
+                "relation": relation,
+                "display": keyword or _display_for_relation(relation),
+                "description": attributes[3],
+                "confidence": _float_or_default(attributes[-1], 0.72),
+            }
+        )
+    return {"entities": entities, "relations": relations}
+
+
+def _ragflow_tuple_records(text: str) -> list[str]:
+    parts = re.split(
+        "|".join(
+            [
+                re.escape(RAGFLOW_RECORD_DELIMITER),
+                re.escape(RAGFLOW_COMPLETION_DELIMITER),
+            ]
+        ),
+        text,
+    )
+    records: list[str] = []
+    for part in parts:
+        match = re.search(r"\((.*)\)", part.strip())
+        if match:
+            records.append(match.group(1).strip())
+    return records
+
+
+def _unquote_ragflow_attr(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1].strip()
+    return value
+
+
+def _float_or_default(value: str, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _merge_extracted_payload(
+    entities: dict[str, EntityCandidate],
+    relations: dict[str, RelationCandidate],
+    chunk: DocumentChunk,
+    extracted: dict,
+) -> None:
+    entity_labels: dict[str, str] = {}
+    canonical_names: dict[str, str] = {}
+    for item in extracted.get("entities", []):
+        raw_name = _first_text(item, "name", "text", "value", "entity", "entity_id")
+        label = _normalize_label(_first_text(item, "label", "type", "category"))
+        name = _canonical_name(raw_name, label)
+        if not name or not label:
+            continue
+        entity_id = _entity_id(label, name)
+        canonical_names[raw_name] = name
+        entity_labels[name] = label
+        existing = entities.get(entity_id)
+        chunk_ids = [chunk.chunk_id]
+        if existing:
+            chunk_ids = sorted(set(existing.source_chunk_ids + chunk_ids))
+        entities[entity_id] = EntityCandidate(
+            entity_id=entity_id,
+            name=name,
+            label=label,
+            normalized_name=name,
+            source_chunk_ids=chunk_ids,
+            confidence=float(item.get("confidence") or 0.75),
+        )
+
+    for item in extracted.get("relations", []):
+        raw_source_name = _first_text(item, "source", "subject", "head", "from")
+        raw_target_name = _first_text(item, "target", "object", "tail", "to")
+        source_name = canonical_names.get(raw_source_name, raw_source_name)
+        target_name = canonical_names.get(raw_target_name, raw_target_name)
+        relation = _normalize_relation(str(item.get("relation", "")))
+        display = str(item.get("display", "")).strip() or _display_for_relation(relation)
+        if not source_name or not target_name or not relation:
+            continue
+        source_label = entity_labels.get(source_name)
+        target_label = entity_labels.get(target_name)
+        if not source_label or not target_label:
+            continue
+        source_id = _entity_id(source_label, source_name)
+        target_id = _entity_id(target_label, target_name)
+        relation_id = f"relation:{source_id}:{relation}:{target_id}"
+        existing = relations.get(relation_id)
+        evidence_chunk_ids = [chunk.chunk_id]
+        if existing:
+            evidence_chunk_ids = sorted(set(existing.evidence_chunk_ids + evidence_chunk_ids))
+        relations[relation_id] = RelationCandidate(
+            relation_id=relation_id,
+            source_entity_id=source_id,
+            target_entity_id=target_id,
+            relation=relation,
+            display=display,
+            evidence_chunk_ids=evidence_chunk_ids,
+            confidence=float(item.get("confidence") or 0.72),
+        )
 
 
 def _first_text(item: dict[str, Any], *keys: str) -> str:
@@ -191,3 +467,60 @@ def _display_for_relation(relation: str) -> str:
         "TREATS": "主治",
         "RELATED_TO": "相关",
     }.get(relation, "相关")
+
+
+def _normalize_method(method: str) -> str:
+    normalized = str(method or "light").strip().lower()
+    return normalized if normalized in {"light", "general", "ner"} else "light"
+
+
+def _ner_entities(text: str) -> list[tuple[str, str]]:
+    terms = {
+        "头痛": "Symptom",
+        "不寐": "Symptom",
+        "失眠": "Symptom",
+        "心脾两虚": "Syndrome",
+        "肝郁化火": "Syndrome",
+        "补益心脾": "Treatment",
+        "养血敛阴": "Function",
+        "归脾汤": "Formula",
+        "白芍": "Herb",
+        "白芍药": "Herb",
+        "党参": "Herb",
+        "柴胡": "Herb",
+        "桂枝": "Herb",
+        "干姜": "Herb",
+    }
+    found = [(name, label) for name, label in terms.items() if name in text]
+    found.sort(key=lambda item: (text.find(item[0]), -len(item[0]), item[0]))
+    return found
+
+
+def _ner_relations(found: list[tuple[str, str]]) -> list[tuple[str, str, str, str, str]]:
+    relations = []
+    for source_name, source_label in found:
+        for target_name, target_label in found:
+            if source_name == target_name:
+                continue
+            relation = _ner_relation_for_labels(source_label, target_label)
+            if relation:
+                relations.append(
+                    (source_name, source_label, target_name, target_label, relation)
+                )
+    return relations
+
+
+def _ner_relation_for_labels(source_label: str, target_label: str) -> str:
+    if source_label == "Symptom" and target_label == "Syndrome":
+        return "MANIFESTS_AS"
+    if source_label == "Syndrome" and target_label == "Treatment":
+        return "RECOMMENDS_TREATMENT"
+    if source_label == "Treatment" and target_label == "Formula":
+        return "RECOMMENDS_FORMULA"
+    if source_label == "Formula" and target_label == "Herb":
+        return "COMPOSED_OF"
+    if source_label == "Herb" and target_label == "Function":
+        return "RELATED_TO"
+    if source_label in {"Formula", "Treatment"} and target_label in {"Symptom", "Syndrome"}:
+        return "TREATS"
+    return ""

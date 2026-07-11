@@ -14,6 +14,7 @@ from app.services.ragflow_compat.schemas import (
     RetrievalCommunityReport,
     RetrievalChunk,
     RetrievalDocument,
+    RetrievalGraphRagBuildRun,
     RetrievalGraphArtifact,
     RetrievalKgEntity,
     RetrievalKgRelation,
@@ -31,9 +32,11 @@ from app.services.ragflow_compat.tables import (
     retrieval_kg_relations_table,
     retrieval_kg_type_samples_table,
     retrieval_metadata,
+    retrieval_sync_state_table,
 )
 
 T = TypeVar("T")
+GRAPHRAG_BUILD_LOCK_KEY = "graphrag:build:lock"
 
 
 @dataclass(frozen=True)
@@ -62,18 +65,20 @@ class RagflowRetrievalRepository:
     def replace_chunk_terms(self, terms: list) -> None:
         self._replace_all(retrieval_chunk_terms_table, [_row(term) for term in terms])
 
-    def clear_rebuild_tables(self) -> None:
+    def clear_rebuild_tables(self, *, include_graph_artifacts: bool = True) -> None:
         with self.engine.begin() as connection:
-            for table in [
+            tables = [
                 retrieval_chunk_terms_table,
                 retrieval_chunks_table,
                 retrieval_documents_table,
                 retrieval_kg_entities_table,
                 retrieval_kg_relations_table,
                 retrieval_kg_community_reports_table,
-                retrieval_kg_graph_artifacts_table,
                 retrieval_kg_type_samples_table,
-            ]:
+            ]
+            if include_graph_artifacts:
+                tables.append(retrieval_kg_graph_artifacts_table)
+            for table in tables:
                 connection.execute(delete(table))
 
     def append_documents(self, documents: list[RetrievalDocument]) -> None:
@@ -214,6 +219,158 @@ class RagflowRetrievalRepository:
                 delete(retrieval_graphrag_phase_markers_table)
                 .where(retrieval_graphrag_phase_markers_table.c.phase.in_(clean_phases))
             )
+
+    def save_graphrag_build_run(self, run: RetrievalGraphRagBuildRun) -> None:
+        if not run.run_id:
+            return
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(retrieval_sync_state_table)
+                .where(retrieval_sync_state_table.c.sync_key == run.run_id)
+            )
+            connection.execute(
+                retrieval_sync_state_table.insert(),
+                {
+                    "sync_key": run.run_id,
+                    "status": run.status,
+                    "started_at": run.started_at,
+                    "finished_at": run.finished_at,
+                    "cursor": run.cursor,
+                    "total": run.total,
+                    "processed": run.processed,
+                    "failed": run.failed,
+                    "metadata": run.metadata,
+                },
+            )
+
+    def get_graphrag_build_run(self, run_id: str) -> RetrievalGraphRagBuildRun | None:
+        if not run_id:
+            return None
+        statement = (
+            select(retrieval_sync_state_table)
+            .where(retrieval_sync_state_table.c.sync_key == run_id)
+            .limit(1)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            if not row:
+                return None
+            return _graphrag_build_run_from_row(row._mapping)
+
+    def list_graphrag_build_runs(self, *, limit: int = 20) -> list[RetrievalGraphRagBuildRun]:
+        bounded_limit = min(max(limit, 1), 100)
+        statement = (
+            select(retrieval_sync_state_table)
+            .where(retrieval_sync_state_table.c.sync_key.like("graphrag:build:%"))
+            .where(retrieval_sync_state_table.c.sync_key != GRAPHRAG_BUILD_LOCK_KEY)
+            .order_by(
+                retrieval_sync_state_table.c.started_at.desc(),
+                retrieval_sync_state_table.c.sync_key.desc(),
+            )
+            .limit(bounded_limit)
+        )
+        with self.engine.begin() as connection:
+            return [
+                _graphrag_build_run_from_row(row._mapping)
+                for row in connection.execute(statement)
+            ]
+
+    def claim_graphrag_build_lock(
+        self,
+        run_id: str,
+        *,
+        started_at: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        if not run_id:
+            return False
+        if self.engine.dialect.name != "postgresql":
+            with self._claim_lock:
+                return self._claim_graphrag_build_lock(
+                    run_id,
+                    started_at=started_at,
+                    metadata=metadata,
+                )
+        return self._claim_graphrag_build_lock(
+            run_id,
+            started_at=started_at,
+            metadata=metadata,
+        )
+
+    def _claim_graphrag_build_lock(
+        self,
+        run_id: str,
+        *,
+        started_at: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        with self.engine.begin() as connection:
+            current = connection.execute(
+                select(
+                    retrieval_sync_state_table.c.status,
+                    retrieval_sync_state_table.c.cursor,
+                )
+                .where(retrieval_sync_state_table.c.sync_key == GRAPHRAG_BUILD_LOCK_KEY)
+                .limit(1)
+            ).first()
+            if current and current.status == "running":
+                return False
+            connection.execute(
+                delete(retrieval_sync_state_table)
+                .where(retrieval_sync_state_table.c.sync_key == GRAPHRAG_BUILD_LOCK_KEY)
+            )
+            connection.execute(
+                retrieval_sync_state_table.insert(),
+                {
+                    "sync_key": GRAPHRAG_BUILD_LOCK_KEY,
+                    "status": "running",
+                    "started_at": started_at,
+                    "finished_at": "",
+                    "cursor": run_id,
+                    "total": 1,
+                    "processed": 0,
+                    "failed": 0,
+                    "metadata": metadata,
+                },
+            )
+        return True
+
+    def release_graphrag_build_lock(self, run_id: str) -> None:
+        if not run_id:
+            return
+        with self.engine.begin() as connection:
+            connection.execute(
+                retrieval_sync_state_table.update()
+                .where(retrieval_sync_state_table.c.sync_key == GRAPHRAG_BUILD_LOCK_KEY)
+                .where(retrieval_sync_state_table.c.cursor == run_id)
+                .values(status="released", finished_at=_utc_now(), processed=1)
+            )
+
+    def request_graphrag_build_cancel(self, run_id: str) -> bool:
+        run = self.get_graphrag_build_run(run_id)
+        if not run or run.status != "running":
+            return False
+        metadata = {**run.metadata, "cancel_requested": True}
+        self.save_graphrag_build_run(
+            RetrievalGraphRagBuildRun(
+                run_id=run.run_id,
+                status=run.status,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                cursor=run.cursor,
+                total=run.total,
+                processed=run.processed,
+                failed=run.failed,
+                metadata=metadata,
+            )
+        )
+        return True
+
+    def is_graphrag_build_cancel_requested(self, run_id: str) -> bool:
+        run = self.get_graphrag_build_run(run_id)
+        if not run:
+            return False
+        return bool(run.metadata.get("cancel_requested"))
 
     def update_chunk_vector_status(self, chunk_id: str, *, point_id: str, status: str) -> None:
         if self.engine.dialect.name != "postgresql":
@@ -569,6 +726,40 @@ class RagflowRetrievalRepository:
             for relation_id in ordered_ids
             if relation_id in relations
         ]
+
+    def find_kg_relation_by_entities(
+        self,
+        left_entity: str,
+        right_entity: str,
+    ) -> RetrievalKgRelation | None:
+        left_entity = left_entity.strip()
+        right_entity = right_entity.strip()
+        if not left_entity or not right_entity:
+            return None
+        statement = (
+            select(retrieval_kg_relations_table)
+            .where(
+                retrieval_kg_relations_table.c.available_int == 1,
+                or_(
+                    (
+                        (retrieval_kg_relations_table.c.from_entity_kwd == left_entity)
+                        & (retrieval_kg_relations_table.c.to_entity_kwd == right_entity)
+                    ),
+                    (
+                        (retrieval_kg_relations_table.c.from_entity_kwd == right_entity)
+                        & (retrieval_kg_relations_table.c.to_entity_kwd == left_entity)
+                    ),
+                ),
+            )
+            .order_by(
+                retrieval_kg_relations_table.c.weight_int.desc(),
+                retrieval_kg_relations_table.c.relation_id,
+            )
+            .limit(1)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            return RetrievalKgRelation(**dict(row._mapping)) if row else None
 
     def count_embedded_kg_entities(self) -> int:
         with self.engine.begin() as connection:
@@ -1131,6 +1322,20 @@ class RagflowRetrievalRepository:
 
 def _row(value) -> dict[str, Any]:
     return asdict(value)
+
+
+def _graphrag_build_run_from_row(row) -> RetrievalGraphRagBuildRun:
+    return RetrievalGraphRagBuildRun(
+        run_id=row["sync_key"],
+        status=row["status"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+        cursor=row["cursor"],
+        total=row["total"],
+        processed=row["processed"],
+        failed=row["failed"],
+        metadata=row["metadata"],
+    )
 
 
 def _utc_now() -> str:

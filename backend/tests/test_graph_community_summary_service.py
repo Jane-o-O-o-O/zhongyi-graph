@@ -45,3 +45,4 @@ def test_community_summary_writes_titles_summaries_and_representative_entities()
         assert "归脾汤" in node.properties["community_summary"]
         assert node.properties["community_size"] == 4
         assert "归脾汤" in node.properties["community_entities"]
+        assert node.properties["communities"] == [node.properties["community_title"]]

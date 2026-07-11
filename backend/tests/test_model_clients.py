@@ -138,6 +138,51 @@ def test_structured_extraction_client_query_prompt_requests_expanded_entities():
     assert "衍生" in captured["system"]
 
 
+def test_structured_extraction_client_extracts_ragflow_query_rewrite_with_type_pool():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read().decode("utf-8"))
+        captured["system"] = payload["messages"][0]["content"]
+        captured["user"] = payload["messages"][1]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer_type_keywords": ["Formula"],
+                                    "entities_from_query": ["失眠", "归脾汤"],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = StructuredExtractionClient(
+        base_url="https://api.siliconflow.cn/v1",
+        api_key="secret",
+        model="nclusionAI/Ling-flash-2.0",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    extracted = client.extract_query(
+        "睡不着用什么方？",
+        type_pool={"Formula": ["归脾汤"], "Syndrome": ["心脾两虚"]},
+    )
+
+    assert extracted["answer_type_keywords"] == ["Formula"]
+    assert extracted["entities_from_query"] == ["失眠", "归脾汤"]
+    assert "answer_type_keywords" in captured["system"]
+    assert "entities_from_query" in captured["system"]
+    assert '"Formula": ["归脾汤"]' in captured["user"]
+
+
 def test_structured_extraction_client_extracts_units_in_one_batch_request():
     captured = {}
 
@@ -264,3 +309,20 @@ def test_structured_extraction_client_normalizes_single_item_batch_response():
             }
         ]
     }
+
+
+def test_demo_structured_extraction_client_extracts_each_batch_unit():
+    result = StructuredExtractionClient.demo().extract_chunks_batch(
+        [
+            {"unit_id": "unit:1", "text": "失眠可辨为心脾两虚。"},
+            {"unit_id": "unit:2", "text": "归脾汤由党参等药组成。"},
+        ]
+    )
+
+    assert [item["unit_id"] for item in result["items"]] == ["unit:1", "unit:2"]
+    first_item = result["items"][0]
+    second_item = result["items"][1]
+    assert {entity["name"] for entity in first_item["entities"]} == {"失眠", "心脾两虚"}
+    assert first_item["relations"][0]["relation"] == "MANIFESTS_AS"
+    assert {entity["name"] for entity in second_item["entities"]} == {"归脾汤", "党参"}
+    assert second_item["relations"][0]["relation"] == "COMPOSED_OF"
