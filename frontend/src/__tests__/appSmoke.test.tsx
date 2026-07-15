@@ -16,6 +16,7 @@ const graphApi = {
   linkDirectionalParticleWidth: vi.fn(),
   linkWidth: vi.fn(),
   nodeRelSize: vi.fn(),
+  nodeVal: vi.fn(),
   nodeOpacity: vi.fn(),
   nodeThreeObject: vi.fn(),
   nodeThreeObjectExtend: vi.fn(),
@@ -31,11 +32,24 @@ const graphApi = {
   showNavInfo: vi.fn(),
   zoomToFit: vi.fn(),
   cameraPosition: vi.fn(),
+  controls: vi.fn(),
+  warmupTicks: vi.fn(),
+  cooldownTicks: vi.fn(),
+  d3AlphaDecay: vi.fn(),
+  d3VelocityDecay: vi.fn(),
+  d3Force: vi.fn(),
   _destructor: vi.fn(),
 };
 
 Object.values(graphApi).forEach((fn) => {
   fn.mockReturnValue(graphApi);
+});
+graphApi.d3Force.mockReturnValue(undefined);
+graphApi.controls.mockReturnValue({
+  autoRotate: false,
+  autoRotateSpeed: 0,
+  enableDamping: false,
+  dampingFactor: 0,
 });
 
 vi.mock('3d-force-graph', () => ({
@@ -143,11 +157,53 @@ describe('App', () => {
     );
   });
 
+  it('reloads the overview graph after the node limit input loses focus', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => expect(mockedLoadGraphOverview).toHaveBeenCalledWith(700));
+    mockedLoadGraphOverview.mockResolvedValueOnce({
+      graphNodes: [{ id: 'symptom:失眠', label: 'Symptom', name: '失眠' }],
+      graphEdges: [],
+      highlightedPath: [],
+    });
+
+    const limitInput = screen.getByRole('spinbutton', { name: '节点数' });
+    await user.clear(limitInput);
+    await user.type(limitInput, '120');
+    expect(mockedLoadGraphOverview).toHaveBeenCalledTimes(1);
+    await user.tab();
+
+    await waitFor(() => expect(mockedLoadGraphOverview).toHaveBeenLastCalledWith(120));
+    await waitFor(() =>
+      expect(graphApi.graphData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.arrayContaining([expect.objectContaining({ id: 'symptom:失眠' })]),
+        }),
+      ),
+    );
+  });
+
+  it('restores the last applied node limit when the input is left empty', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => expect(mockedLoadGraphOverview).toHaveBeenCalledTimes(1));
+    const limitInput = screen.getByRole('spinbutton', { name: '节点数' });
+    await user.clear(limitInput);
+    await user.tab();
+
+    expect(limitInput).toHaveValue('700');
+    expect(mockedLoadGraphOverview).toHaveBeenCalledTimes(1);
+  });
+
   it('submits a question and renders returned graph data with localized labels', async () => {
     const user = userEvent.setup();
     mockedSubmitQuestion.mockResolvedValueOnce(successResult);
 
     render(<App />);
+
+    await waitFor(() => expect(mockedLoadGraphOverview).toHaveBeenCalledWith(700));
 
     await user.type(
       screen.getByPlaceholderText('请输入中医问题，例如：失眠可以从哪些证候分析？'),
@@ -162,6 +218,18 @@ describe('App', () => {
     expect(screen.getByText('中药')).toBeInTheDocument();
     expect(screen.queryByText('Formula')).not.toBeInTheDocument();
     expect(screen.queryByText('Herb')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(graphApi.graphData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.arrayContaining([
+            expect.objectContaining({ id: 'formula:归脾汤', highlighted: false, dimmed: true }),
+            expect.objectContaining({ id: 'formula', highlighted: true, dimmed: false }),
+            expect.objectContaining({ id: 'herb_coptis', highlighted: true, dimmed: false }),
+            expect.objectContaining({ id: 'herb_gelatin', highlighted: true, dimmed: false }),
+          ]),
+        }),
+      ),
+    );
   });
 
   it('keeps the graph visible and shows fallback answer when submit fails', async () => {
@@ -176,8 +244,9 @@ describe('App', () => {
     );
     await user.click(screen.getByRole('button', { name: /研判/ }));
 
-    expect(await screen.findByText(/已基于本地知识图谱给出稳态研判/)).toBeInTheDocument();
+    expect(await screen.findByText(/本次研判围绕“眩晕怎么辨证？”进行/)).toBeInTheDocument();
     expect(screen.getByLabelText('综合研判')).toHaveClass('glass-overlay');
+    expect(screen.queryByText('展开建议')).not.toBeInTheDocument();
     expect(screen.getByText('知识图谱')).toBeInTheDocument();
   });
 });

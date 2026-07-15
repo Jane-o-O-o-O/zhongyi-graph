@@ -56,6 +56,7 @@ export type ForceGraphNode = NodeObject & {
   displayLabel: string;
   color: string;
   highlighted: boolean;
+  dimmed: boolean;
 };
 
 export type ForceGraphLink = LinkObject<ForceGraphNode> & {
@@ -92,6 +93,7 @@ export function buildForceGraphData(
         displayLabel: meta.display,
         color: meta.color,
         highlighted: highlighted.has(node.id),
+        dimmed: highlighted.size > 0 && !highlighted.has(node.id),
       };
     }),
     links: edges.map((edge) => ({

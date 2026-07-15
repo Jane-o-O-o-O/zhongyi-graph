@@ -23,6 +23,7 @@ const linkForceStrength = vi.fn();
 const linkForceIterations = vi.fn();
 const chargeForceStrength = vi.fn();
 const nodeRelSize = vi.fn();
+const nodeVal = vi.fn();
 const nodeOpacity = vi.fn();
 const nodeThreeObject = vi.fn();
 const nodeThreeObjectExtend = vi.fn();
@@ -38,7 +39,15 @@ const backgroundColor = vi.fn();
 const showNavInfo = vi.fn();
 const zoomToFit = vi.fn();
 const cameraPosition = vi.fn();
+const controls = vi.fn();
 const destructor = vi.fn();
+
+const orbitControls = {
+  autoRotate: false,
+  autoRotateSpeed: 0,
+  enableDamping: false,
+  dampingFactor: 0,
+};
 
 const linkForce = {
   distance: linkForceDistance,
@@ -66,6 +75,7 @@ const graphApi = {
   d3VelocityDecay,
   d3Force,
   nodeRelSize,
+  nodeVal,
   nodeOpacity,
   nodeThreeObject,
   nodeThreeObjectExtend,
@@ -81,6 +91,7 @@ const graphApi = {
   showNavInfo,
   zoomToFit,
   cameraPosition,
+  controls,
   _destructor: destructor,
 };
 
@@ -116,6 +127,12 @@ describe('GraphCanvas', () => {
     Object.values(linkForce).forEach((fn) => fn.mockClear());
     Object.values(chargeForce).forEach((fn) => fn.mockClear());
     graphConstructor.mockClear();
+    Object.assign(orbitControls, {
+      autoRotate: false,
+      autoRotateSpeed: 0,
+      enableDamping: false,
+      dampingFactor: 0,
+    });
     [
       graphData,
       nodeLabel,
@@ -131,6 +148,7 @@ describe('GraphCanvas', () => {
       d3AlphaDecay,
       d3VelocityDecay,
       nodeRelSize,
+      nodeVal,
       nodeOpacity,
       nodeThreeObject,
       nodeThreeObjectExtend,
@@ -147,6 +165,7 @@ describe('GraphCanvas', () => {
       zoomToFit,
       cameraPosition,
     ].forEach(chainable);
+    controls.mockReturnValue(orbitControls);
     d3Force.mockImplementation((forceName) => {
       if (forceName === 'link') {
         return linkForce;
@@ -186,7 +205,19 @@ describe('GraphCanvas', () => {
     );
     expect(nodeLabel).toHaveBeenCalledWith(expect.any(Function));
     expect(nodeColor).toHaveBeenCalledWith(expect.any(Function));
+    const nodeColorAccessor = nodeColor.mock.calls[0][0];
+    const linkColorAccessor = linkColor.mock.calls[0][0];
+    expect(nodeColorAccessor({ id: 'other', highlighted: false, color: '#ffffff' })).toBe(
+      'rgba(109, 126, 122, 0.12)',
+    );
+    expect(linkColorAccessor({ id: 'other-edge', highlighted: false })).toBe(
+      'rgba(155, 170, 164, 0.07)',
+    );
     expect(nodeRelSize).toHaveBeenCalledWith(7);
+    expect(nodeVal).toHaveBeenCalledWith(expect.any(Function));
+    const nodeValAccessor = nodeVal.mock.calls[0][0];
+    expect(nodeValAccessor({ highlighted: true })).toBe(9);
+    expect(nodeValAccessor({ highlighted: false })).toBe(0.35);
     expect(nodeOpacity).toHaveBeenCalledWith(0.92);
     expect(nodeThreeObject).toHaveBeenCalledWith(expect.any(Function));
     expect(nodeThreeObjectExtend).toHaveBeenCalledWith(true);
@@ -208,6 +239,13 @@ describe('GraphCanvas', () => {
     expect(onNodeHover).toHaveBeenCalledWith(expect.any(Function));
     expect(onLinkHover).toHaveBeenCalledWith(expect.any(Function));
     expect(onNodeClick).toHaveBeenCalledWith(expect.any(Function));
+    expect(controls).toHaveBeenCalledTimes(1);
+    expect(orbitControls).toEqual({
+      autoRotate: true,
+      autoRotateSpeed: 0.45,
+      enableDamping: true,
+      dampingFactor: 0.08,
+    });
   });
 
   it('spreads overview-scale graphs without changing node or label size', () => {
@@ -220,6 +258,7 @@ describe('GraphCanvas', () => {
     render(<GraphCanvas nodes={overviewNodes} edges={[]} highlightedPath={[]} />);
 
     expect(nodeRelSize).toHaveBeenCalledWith(7);
+    expect(nodeVal).toHaveBeenCalledWith(expect.any(Function));
     expect(nodeOpacity).toHaveBeenCalledWith(0.92);
     expect(nodeThreeObject).toHaveBeenCalledWith(expect.any(Function));
     expect(warmupTicks).toHaveBeenCalledWith(80);
@@ -228,10 +267,10 @@ describe('GraphCanvas', () => {
     expect(d3VelocityDecay).toHaveBeenCalledWith(0.32);
     expect(d3Force).toHaveBeenCalledWith('link');
     expect(d3Force).toHaveBeenCalledWith('charge');
-    expect(linkForceDistance).toHaveBeenCalledWith(58);
+    expect(linkForceDistance).toHaveBeenCalledWith(232);
     expect(linkForceStrength).toHaveBeenCalledWith(0.28);
     expect(linkForceIterations).toHaveBeenCalledWith(1);
-    expect(chargeForceStrength).toHaveBeenCalledWith(-95);
+    expect(chargeForceStrength).toHaveBeenCalledWith(-380);
   });
 
   it('sizes the 3D canvas to its container and destroys it on unmount', () => {

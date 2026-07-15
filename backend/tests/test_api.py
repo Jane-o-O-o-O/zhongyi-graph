@@ -40,6 +40,27 @@ def test_graph_overview_endpoint_returns_limited_visible_graph():
     assert body["highlighted_path"] == []
 
 
+def test_graph_overview_endpoint_returns_full_graph_when_limit_is_omitted(monkeypatch):
+    from app.api import routes
+
+    class RecordingGraphService:
+        nodes = [object()] * 3001
+        edges = [object()] * 10001
+        requested_limits = None
+
+        def overview(self, *, max_nodes: int, max_edges: int):
+            self.requested_limits = (max_nodes, max_edges)
+            return [], []
+
+    graph_service = RecordingGraphService()
+    monkeypatch.setattr(routes.question_service, "graph_service", graph_service)
+
+    response = client.get("/api/graph/overview")
+
+    assert response.status_code == 200
+    assert graph_service.requested_limits == (3001, 10001)
+
+
 def test_register_ingestion_source_echoes_manifest():
     response = client.post(
         "/api/ingestion/sources",

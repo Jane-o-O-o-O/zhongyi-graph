@@ -7,6 +7,7 @@ describe('graphData', () => {
     const nodes: GraphNode[] = [
       { id: 'symptom:失眠', label: 'Symptom', name: '失眠' },
       { id: 'formula:归脾汤', label: 'Formula', name: '归脾汤' },
+      { id: 'herb:党参', label: 'Herb', name: '党参' },
     ];
     const edges: GraphEdge[] = [
       {
@@ -20,7 +21,7 @@ describe('graphData', () => {
 
     const data = buildForceGraphData(nodes, edges, ['symptom:失眠', 'formula:归脾汤']);
 
-    expect(data.nodes).toHaveLength(2);
+    expect(data.nodes).toHaveLength(3);
     expect(data.nodes?.[0]).toMatchObject({
       id: 'symptom:失眠',
       label: 'Symptom',
@@ -28,7 +29,9 @@ describe('graphData', () => {
       name: '失眠',
       color: expect.any(String),
       highlighted: true,
+      dimmed: false,
     });
+    expect(data.nodes?.[2]).toMatchObject({ id: 'herb:党参', highlighted: false, dimmed: true });
     expect(data.links?.[0]).toMatchObject({
       id: 'edge:1',
       source: 'symptom:失眠',

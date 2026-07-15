@@ -1,5 +1,41 @@
-import { describe, expect, it } from 'vitest';
-import { normalizeGraphOverviewResponse, normalizeQueryResponse } from '../api/client';
+import axios from 'axios';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  loadGraphOverview,
+  normalizeGraphOverviewResponse,
+  normalizeQueryResponse,
+} from '../api/client';
+
+vi.mock('axios', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+  },
+}));
+
+const mockedAxiosGet = vi.mocked(axios.get);
+
+beforeEach(() => {
+  mockedAxiosGet.mockReset();
+});
+
+describe('loadGraphOverview', () => {
+  it('omits the node limit by default', async () => {
+    mockedAxiosGet.mockResolvedValueOnce({
+      data: {
+        graph_nodes: [],
+        graph_edges: [],
+        highlighted_path: [],
+      },
+    });
+
+    await loadGraphOverview();
+
+    expect(mockedAxiosGet).toHaveBeenCalledWith('/api/graph/overview', {
+      params: { limit: undefined },
+    });
+  });
+});
 
 describe('normalizeQueryResponse', () => {
   it('keeps answer graph and evidence arrays stable', () => {

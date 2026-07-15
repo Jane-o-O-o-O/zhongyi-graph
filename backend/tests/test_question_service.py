@@ -84,7 +84,10 @@ def test_question_service_keeps_deterministic_client_without_api_key():
 
     response = service.answer("失眠可以从哪些证候分析？")
 
-    assert response.answer.startswith("### 综合结论")
+    assert response.answer.startswith("### 图谱路径")
+    assert "### 展开建议" not in response.answer
+    conclusion = response.answer.split("### 综合结论", 1)[1]
+    assert len(conclusion) >= 200
     assert "失眠" in response.answer
 
 

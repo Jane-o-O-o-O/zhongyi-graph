@@ -27,7 +27,7 @@ export async function submitQuestion(question: string): Promise<QueryResult> {
   return normalizeQueryResponse(response.data);
 }
 
-export async function loadGraphOverview(limit = 3000): Promise<GraphOverview> {
+export async function loadGraphOverview(limit?: number): Promise<GraphOverview> {
   const response = await axios.get<ApiGraphOverviewResponse>('/api/graph/overview', {
     params: { limit },
   });

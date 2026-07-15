@@ -22,6 +22,7 @@ type GraphCanvasProps = {
 
 type DemoGraphApi = ForceGraph3DInstance<ForceGraphNode, ForceGraphLink> & {
   nodeRelSize(size: number): DemoGraphApi;
+  nodeVal(accessor: (node: ForceGraphNode) => number): DemoGraphApi;
   nodeOpacity(opacity: number): DemoGraphApi;
   nodeThreeObject(accessor: (node: ForceGraphNode) => Object3D): DemoGraphApi;
   nodeThreeObjectExtend(extend: boolean): DemoGraphApi;
@@ -38,6 +39,13 @@ type GraphLinkForce = {
 
 type GraphChargeForce = {
   strength(strength: number): GraphChargeForce;
+};
+
+type GraphOrbitControls = {
+  autoRotate: boolean;
+  autoRotateSpeed: number;
+  enableDamping: boolean;
+  dampingFactor: number;
 };
 
 const TcmForceGraph3D = ForceGraph3D as unknown as {
@@ -68,7 +76,7 @@ function createNodeNameSprite(node: ForceGraphNode) {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-  const fontSize = 24;
+  const fontSize = 28;
   const paddingX = 12;
   const paddingY = 6;
 
@@ -89,8 +97,12 @@ function createNodeNameSprite(node: ForceGraphNode) {
   context.font = `700 ${fontSize}px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif`;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillStyle = 'rgba(3, 8, 13, 0.34)';
-  context.strokeStyle = node.highlighted ? 'rgba(255, 118, 94, 0.64)' : 'rgba(104, 247, 215, 0.2)';
+  context.fillStyle = node.dimmed ? 'rgba(3, 8, 13, 0.14)' : 'rgba(3, 8, 13, 0.34)';
+  context.strokeStyle = node.highlighted
+    ? 'rgba(255, 118, 94, 0.64)'
+    : node.dimmed
+      ? 'rgba(104, 247, 215, 0.05)'
+      : 'rgba(104, 247, 215, 0.2)';
   context.lineWidth = 1.4;
   context.beginPath();
   context.roundRect(1, 1, width - 2, height - 2, 12);
@@ -98,7 +110,7 @@ function createNodeNameSprite(node: ForceGraphNode) {
   context.stroke();
   context.shadowColor = node.highlighted ? 'rgba(255, 118, 94, 0.76)' : 'rgba(104, 247, 215, 0.62)';
   context.shadowBlur = 10;
-  context.fillStyle = '#f6fff9';
+  context.fillStyle = node.dimmed ? 'rgba(246, 255, 249, 0.18)' : '#f6fff9';
   context.fillText(label, width / 2, height / 2);
 
   const texture = new CanvasTexture(canvas);
@@ -107,11 +119,12 @@ function createNodeNameSprite(node: ForceGraphNode) {
     map: texture,
     transparent: true,
     depthWrite: false,
+    opacity: node.dimmed ? 0.34 : 1,
   });
   const sprite = new Sprite(material);
-  const scale = node.highlighted ? 7.8 : 6.8;
+  const scale = node.highlighted ? 11 : 8.4;
   sprite.scale.set((width / height) * scale, scale, 1);
-  sprite.position.y = node.highlighted ? 9.2 : 8;
+  sprite.position.y = node.highlighted ? 10.8 : 9.2;
   return sprite;
 }
 
@@ -149,10 +162,22 @@ function configureOverviewSpread(graph: DemoGraphApi, nodeCount: number) {
     .d3VelocityDecay(0.32);
 
   const linkForce = graph.d3Force('link') as GraphLinkForce | undefined;
-  linkForce?.distance(58).strength(0.28).iterations(1);
+  linkForce?.distance(232).strength(0.28).iterations(1);
 
   const chargeForce = graph.d3Force('charge') as GraphChargeForce | undefined;
-  chargeForce?.strength(-95);
+  chargeForce?.strength(-380);
+}
+
+function configureAutoRotation(graph: DemoGraphApi, nodeCount: number) {
+  const controls = graph.controls() as GraphOrbitControls | undefined;
+  if (!controls) {
+    return;
+  }
+
+  controls.autoRotate = nodeCount > 1;
+  controls.autoRotateSpeed = 0.45;
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
 }
 
 export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasProps) {
@@ -193,12 +218,14 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
       return undefined;
     }
     const overviewMode = graphData.nodes.length >= 500;
+    const searchActive = graphData.nodes.some((node) => node.highlighted);
 
     const graph = new TcmForceGraph3D(container, { controlType: 'orbit' })
       .backgroundColor('rgba(0,0,0,0)')
       .showNavInfo(false)
       .graphData(graphData)
       .nodeRelSize(7)
+      .nodeVal((node) => (node.highlighted ? 9 : searchActive ? 0.35 : 1))
       .nodeOpacity(0.92)
       .nodeThreeObject(createNodeNameSprite)
       .nodeThreeObjectExtend(true)
@@ -212,11 +239,17 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
         if (node.highlighted || hoverNodeIds.current.has(node.id)) {
           return node.color;
         }
+        if (searchActive) {
+          return 'rgba(109, 126, 122, 0.12)';
+        }
         return active ? node.color : 'rgba(218, 205, 178, 0.28)';
       })
       .linkColor((link) => {
         if (link.highlighted || hoverLinkIds.current.has(link.id)) {
           return colors.cinnabar;
+        }
+        if (searchActive) {
+          return 'rgba(155, 170, 164, 0.07)';
         }
         return hoverLinkIds.current.size > 0 ? 'rgba(218, 205, 178, 0.16)' : 'rgba(218, 205, 178, 0.34)';
       })
@@ -271,6 +304,7 @@ export function GraphCanvas({ nodes, edges, highlightedPath = [] }: GraphCanvasP
       });
 
     configureOverviewSpread(graph, graphData.nodes.length);
+    configureAutoRotation(graph, graphData.nodes.length);
     graphRef.current = graph;
 
     const applySize = () => {

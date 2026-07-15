@@ -229,11 +229,13 @@ def query(request: QueryRequest) -> QueryResponse:
 
 
 @router.get("/graph/overview", response_model=GraphOverviewResponse)
-def graph_overview(limit: int = 3000) -> GraphOverviewResponse:
-    bounded_limit = min(max(limit, 1), 3000)
+def graph_overview(limit: int | None = None) -> GraphOverviewResponse:
+    graph_service = question_service.graph_service
+    bounded_limit = len(graph_service.nodes) if limit is None else min(max(limit, 1), 3000)
+    edge_limit = len(graph_service.edges) if limit is None else bounded_limit * 3
     nodes, edges = question_service.graph_service.overview(
         max_nodes=bounded_limit,
-        max_edges=bounded_limit * 3,
+        max_edges=edge_limit,
     )
     return GraphOverviewResponse(
         graph_nodes=nodes,

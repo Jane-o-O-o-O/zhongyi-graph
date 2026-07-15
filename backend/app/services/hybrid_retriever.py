@@ -5,13 +5,6 @@ from app.services.graph_service import GraphService
 from app.services.model_clients import RerankClient
 from app.services.vector_service import VectorIndexService
 
-SYMPTOM_PATH_LABELS = ("Symptom", "Syndrome", "Treatment", "Formula", "Herb")
-SYMPTOM_PATH_RELATIONS = (
-    "MANIFESTS_AS",
-    "RECOMMENDS_TREATMENT",
-    "RECOMMENDS_FORMULA",
-    "COMPOSED_OF",
-)
 FORMULA_QUERY_TERMS = ("汤", "方", "方剂", "组成", "主治")
 HERB_QUERY_TERMS = ("药", "中药", "功效", "归经", "性味")
 FORMULA_NEIGHBOR_RELATIONS = {
@@ -41,6 +34,12 @@ DEFAULT_NEIGHBOR_RELATIONS = {
     "TREATS",
     "RELATED_TO",
 }
+RELATED_NEIGHBOR_RELATIONS = (
+    DEFAULT_NEIGHBOR_RELATIONS
+    | FORMULA_NEIGHBOR_RELATIONS
+    | HERB_NEIGHBOR_RELATIONS
+    | {"HAS_PRESCRIPTION", "HAS_DOSE", "INCLUDES"}
+)
 FORMULA_TERMINAL_LABELS = {"Alias", "Dose", "Indication", "Source"}
 HERB_TERMINAL_LABELS = {
     "Alias",
@@ -91,14 +90,11 @@ class HybridRetriever:
         anchor_ids = self._select_anchor_ids(intent, ranked_candidates, terms, top_k)
 
         nodes, edges = self._retrieve_neighborhood(intent, anchor_ids)
-        if intent == "symptom_inquiry":
-            nodes, edges, seed_ids = self._symptom_clinical_path(nodes, edges, anchor_ids)
-        else:
-            seed_ids = _ordered_visible_seed_ids(
-                ranked_node_ids=[node.id for node in ranked_candidates],
-                visible_nodes=nodes,
-                anchor_ids=anchor_ids,
-            )
+        seed_ids = _ordered_visible_seed_ids(
+            ranked_node_ids=[node.id for node in ranked_candidates],
+            visible_nodes=nodes,
+            anchor_ids=anchor_ids,
+        )
         evidence_ids = _unique(
             evidence_id for edge in edges for evidence_id in edge.evidence_ids
         )
@@ -136,7 +132,7 @@ class HybridRetriever:
             )
         return self.graph_service.neighborhood(
             anchor_ids,
-            allowed_relations=DEFAULT_NEIGHBOR_RELATIONS,
+            allowed_relations=RELATED_NEIGHBOR_RELATIONS,
             max_depth=3,
             max_nodes=120,
             max_edges=240,
@@ -185,49 +181,6 @@ class HybridRetriever:
             if node.label == label:
                 return node
         return None
-
-    def _symptom_clinical_path(
-        self,
-        nodes: list[GraphNode],
-        edges: list[GraphEdge],
-        anchor_ids: list[str],
-    ) -> tuple[list[GraphNode], list[GraphEdge], list[str]]:
-        allowed_labels = set(SYMPTOM_PATH_LABELS)
-        allowed_relations = set(SYMPTOM_PATH_RELATIONS)
-        included_ids = set(anchor_ids)
-
-        changed = True
-        while changed:
-            changed = False
-            for edge in edges:
-                if edge.relation not in allowed_relations:
-                    continue
-                if edge.source in included_ids and edge.target not in included_ids:
-                    included_ids.add(edge.target)
-                    changed = True
-                if edge.target in included_ids and edge.source not in included_ids:
-                    included_ids.add(edge.source)
-                    changed = True
-
-        selected_nodes = [
-            node for node in nodes if node.id in included_ids and node.label in allowed_labels
-        ]
-        selected_ids = {node.id for node in selected_nodes}
-        selected_edges = [
-            edge
-            for edge in edges
-            if edge.relation in allowed_relations
-            and edge.source in selected_ids
-            and edge.target in selected_ids
-        ]
-        path_ids = [
-            node.id
-            for node in sorted(
-                selected_nodes,
-                key=lambda node: (SYMPTOM_PATH_LABELS.index(node.label), node.name),
-            )
-        ]
-        return selected_nodes, selected_edges, path_ids
 
     def _rerank_nodes(self, question: str, nodes: list[GraphNode]) -> list[GraphNode]:
         if len(nodes) <= 1:

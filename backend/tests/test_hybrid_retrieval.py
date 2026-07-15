@@ -1,4 +1,4 @@
-from app.data.sample_graph import SAMPLE_EDGES, SAMPLE_EVIDENCE, SAMPLE_NODES
+from app.data.sample_graph import SAMPLE_EVIDENCE, SAMPLE_NODES
 from app.services.graph_service import GraphService
 from app.services.hybrid_retriever import HybridRetriever
 from app.services.model_clients import EmbeddingClient, RerankClient
@@ -109,12 +109,49 @@ def test_hybrid_retriever_keeps_symptom_query_on_connected_clinical_path():
     assert {"失眠", "心脾两虚", "补益心脾", "归脾汤", "党参"} <= names
     assert "柴胡桂枝干姜汤" not in names
     assert "往来寒热" not in names
-    assert result.seed_node_ids[:4] == [
-        "symptom:失眠",
-        "syndrome:心脾两虚",
-        "treatment:补益心脾",
-        "formula:归脾汤",
-    ]
+    assert result.seed_node_ids
+    assert set(result.seed_node_ids) <= {node.id for node in result.nodes}
+
+
+def test_hybrid_retriever_keeps_related_indication_and_treats_neighbors():
+    class FailingVectorIndex:
+        def search(self, question, top_k=10, content_types=None):
+            raise RuntimeError("embedding service unavailable")
+
+    graph_service = GraphService(
+        nodes=[
+            GraphNode(id="indication:头痛", label="Indication", name="头痛"),
+            GraphNode(id="herb:白芷", label="Herb", name="白芷"),
+            GraphNode(id="function:祛风止痛", label="Function", name="祛风止痛"),
+        ],
+        edges=[
+            GraphEdge(
+                id="edge:baizhi:headache",
+                source="herb:白芷",
+                target="indication:头痛",
+                relation="TREATS",
+                display="主治",
+            ),
+            GraphEdge(
+                id="edge:baizhi:function",
+                source="herb:白芷",
+                target="function:祛风止痛",
+                relation="HAS_FUNCTION",
+                display="功效",
+            ),
+        ],
+    )
+    retriever = HybridRetriever(
+        graph_service=graph_service,
+        vector_index=FailingVectorIndex(),
+        rerank_client=RerankClient.demo(),
+    )
+
+    result = retriever.retrieve(question="头痛怎么办", terms=["头痛"], top_k=8)
+
+    assert {node.name for node in result.nodes} == {"头痛", "白芷", "祛风止痛"}
+    assert {edge.relation for edge in result.edges} == {"TREATS", "HAS_FUNCTION"}
+    assert result.seed_node_ids[0] == "indication:头痛"
 
 
 def test_hybrid_retriever_keeps_formula_query_on_formula_branch():

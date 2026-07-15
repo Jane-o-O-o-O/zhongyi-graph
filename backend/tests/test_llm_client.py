@@ -93,7 +93,10 @@ def test_llm_client_requires_markdown_answer_structure():
     assert "### 综合结论" in system_prompt
     assert "### 图谱路径" in system_prompt
     assert "### 证候要点" in system_prompt
-    assert "### 展开建议" in system_prompt
+    assert "### 展开建议" not in system_prompt
+    assert "不少于 200 个汉字" in system_prompt
+    assert system_prompt.index("### 图谱路径") < system_prompt.index("### 证候要点")
+    assert system_prompt.index("### 证候要点") < system_prompt.index("### 综合结论")
     assert "不要输出代码块" in system_prompt
 
 
