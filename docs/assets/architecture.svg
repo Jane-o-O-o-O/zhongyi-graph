@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">TCM Knowledge Graph Platform architecture</title>
+  <desc id="desc">Architecture from React workbench through FastAPI orchestration to Neo4j, Qdrant, PostgreSQL, MinIO, and OpenAI-compatible model services.</desc>
+  <defs>
+    <pattern id="paper" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="7" cy="9" r="0.7" fill="#9e9587" opacity="0.16"/>
+      <circle cx="24" cy="23" r="0.6" fill="#9e9587" opacity="0.12"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#17201e" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0l10 5-10 5z" fill="#547b71"/>
+    </marker>
+  </defs>
+  <rect width="1280" height="720" fill="#f5f1e9"/>
+  <rect width="1280" height="720" fill="url(#paper)"/>
+
+  <g font-family="Inter, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif" letter-spacing="0">
+    <text x="64" y="65" font-size="28" font-weight="750" fill="#1f2b29">系统架构</text>
+    <text x="64" y="94" font-size="14" fill="#66746f">Question-driven graph exploration, evidence retrieval, and knowledge ingestion</text>
+
+    <g filter="url(#shadow)">
+      <rect x="64" y="128" width="1152" height="112" rx="8" fill="#fffdf8" stroke="#cfc8bb"/>
+      <rect x="64" y="270" width="1152" height="144" rx="8" fill="#fffdf8" stroke="#cfc8bb"/>
+      <rect x="64" y="444" width="738" height="216" rx="8" fill="#fffdf8" stroke="#cfc8bb"/>
+      <rect x="832" y="444" width="384" height="216" rx="8" fill="#fffdf8" stroke="#cfc8bb"/>
+    </g>
+
+    <rect x="64" y="128" width="12" height="112" rx="6" fill="#b34235"/>
+    <text x="96" y="158" font-size="12" font-weight="700" fill="#b34235">EXPERIENCE LAYER</text>
+    <text x="96" y="191" font-size="20" font-weight="750" fill="#24302e">React 图谱问答工作台</text>
+    <text x="96" y="216" font-size="13" fill="#687570">自然语言问题、3D 知识图谱、推理路径、答案摘要与证据卡片</text>
+    <g transform="translate(834 151)">
+      <rect width="104" height="58" rx="6" fill="#f4e6e1"/><text x="52" y="26" text-anchor="middle" font-size="12" font-weight="700" fill="#9f3e33">Question</text><text x="52" y="44" text-anchor="middle" font-size="11" fill="#725e59">问题解析</text>
+      <rect x="120" width="104" height="58" rx="6" fill="#e1f1eb"/><text x="172" y="26" text-anchor="middle" font-size="12" font-weight="700" fill="#2e705c">Graph</text><text x="172" y="44" text-anchor="middle" font-size="11" fill="#526861">节点探索</text>
+      <rect x="240" width="104" height="58" rx="6" fill="#eee8d9"/><text x="292" y="26" text-anchor="middle" font-size="12" font-weight="700" fill="#81652a">Evidence</text><text x="292" y="44" text-anchor="middle" font-size="11" fill="#6e6656">溯源证据</text>
+    </g>
+
+    <rect x="64" y="270" width="12" height="144" rx="6" fill="#2f7663"/>
+    <text x="96" y="300" font-size="12" font-weight="700" fill="#2f7663">ORCHESTRATION LAYER</text>
+    <text x="96" y="334" font-size="20" font-weight="750" fill="#24302e">FastAPI 业务编排与 GraphRAG</text>
+    <text x="96" y="359" font-size="13" fill="#687570">问答、混合检索、图谱构建、文档解析、实体关系抽取与发布</text>
+    <g transform="translate(652 294)">
+      <rect width="128" height="86" rx="6" fill="#edf5f2" stroke="#b9d2c9"/>
+      <text x="64" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#285d50">Query Service</text><text x="64" y="54" text-anchor="middle" font-size="11" fill="#62736d">图谱 + 向量 + 全文</text><text x="64" y="70" text-anchor="middle" font-size="11" fill="#62736d">检索结果融合</text>
+      <rect x="146" width="128" height="86" rx="6" fill="#edf5f2" stroke="#b9d2c9"/>
+      <text x="210" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#285d50">Graph Build</text><text x="210" y="54" text-anchor="middle" font-size="11" fill="#62736d">Subgraph checkpoint</text><text x="210" y="70" text-anchor="middle" font-size="11" fill="#62736d">Merge &amp; community</text>
+      <rect x="292" width="128" height="86" rx="6" fill="#edf5f2" stroke="#b9d2c9"/>
+      <text x="356" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#285d50">Ingestion</text><text x="356" y="54" text-anchor="middle" font-size="11" fill="#62736d">解析、OCR、切片</text><text x="356" y="70" text-anchor="middle" font-size="11" fill="#62736d">抽取与发布</text>
+      <rect x="438" width="128" height="86" rx="6" fill="#edf5f2" stroke="#b9d2c9"/>
+      <text x="502" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#285d50">Model Clients</text><text x="502" y="54" text-anchor="middle" font-size="11" fill="#62736d">LLM / Embedding</text><text x="502" y="70" text-anchor="middle" font-size="11" fill="#62736d">Rerank / OCR</text>
+    </g>
+
+    <rect x="64" y="444" width="12" height="216" rx="6" fill="#526a91"/>
+    <text x="96" y="476" font-size="12" font-weight="700" fill="#526a91">KNOWLEDGE &amp; STORAGE</text>
+    <text x="96" y="509" font-size="20" font-weight="750" fill="#24302e">可追溯的多模态知识底座</text>
+    <g transform="translate(96 540)">
+      <rect width="150" height="88" rx="6" fill="#e9eef7" stroke="#becae0"/>
+      <circle cx="28" cy="30" r="12" fill="#5876ad"/><text x="51" y="34" font-size="14" font-weight="700" fill="#364c73">Neo4j</text><text x="20" y="61" font-size="11" fill="#647086">实体、关系、路径</text><text x="20" y="76" font-size="11" fill="#647086">与全局图谱</text>
+      <rect x="168" width="150" height="88" rx="6" fill="#e9eef7" stroke="#becae0"/>
+      <circle cx="196" cy="30" r="12" fill="#5876ad"/><text x="219" y="34" font-size="14" font-weight="700" fill="#364c73">Qdrant</text><text x="188" y="61" font-size="11" fill="#647086">文档、实体、证据</text><text x="188" y="76" font-size="11" fill="#647086">向量检索</text>
+      <rect x="336" width="150" height="88" rx="6" fill="#e9eef7" stroke="#becae0"/>
+      <circle cx="364" cy="30" r="12" fill="#5876ad"/><text x="387" y="34" font-size="14" font-weight="700" fill="#364c73">PostgreSQL</text><text x="356" y="61" font-size="11" fill="#647086">来源、切片、任务</text><text x="356" y="76" font-size="11" fill="#647086">候选实体与关系</text>
+      <rect x="504" width="150" height="88" rx="6" fill="#e9eef7" stroke="#becae0"/>
+      <circle cx="532" cy="30" r="12" fill="#5876ad"/><text x="555" y="34" font-size="14" font-weight="700" fill="#364c73">MinIO</text><text x="524" y="61" font-size="11" fill="#647086">原始 PDF / Word</text><text x="524" y="76" font-size="11" fill="#647086">表格、图片与文本</text>
+    </g>
+
+    <rect x="832" y="444" width="12" height="216" rx="6" fill="#ac7b2f"/>
+    <text x="864" y="476" font-size="12" font-weight="700" fill="#99702d">MODEL GATEWAY</text>
+    <text x="864" y="509" font-size="20" font-weight="750" fill="#24302e">OpenAI-compatible API</text>
+    <text x="864" y="535" font-size="13" fill="#687570">通过环境变量替换模型供应商</text>
+    <g transform="translate(864 562)">
+      <rect width="92" height="54" rx="6" fill="#f4eddd"/><text x="46" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#7b5c25">LLM</text><text x="46" y="40" text-anchor="middle" font-size="10" fill="#766b58">回答 / 抽取</text>
+      <rect x="106" width="92" height="54" rx="6" fill="#f4eddd"/><text x="152" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#7b5c25">Embedding</text><text x="152" y="40" text-anchor="middle" font-size="10" fill="#766b58">向量化</text>
+      <rect x="212" width="92" height="54" rx="6" fill="#f4eddd"/><text x="258" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#7b5c25">Rerank</text><text x="258" y="40" text-anchor="middle" font-size="10" fill="#766b58">重排</text>
+    </g>
+  </g>
+
+  <g fill="none" stroke="#547b71" stroke-width="2.5" marker-end="url(#arrow)">
+    <path d="M640 240v22"/>
+    <path d="M640 414v22"/>
+    <path d="M1008 414v22"/>
+  </g>
+</svg>

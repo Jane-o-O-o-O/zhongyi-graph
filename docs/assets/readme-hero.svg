@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="480" viewBox="0 0 1440 480" role="img" aria-labelledby="title desc">
+  <title id="title">TCM Knowledge Graph Platform visual</title>
+  <desc id="desc">A modern Traditional Chinese Medicine knowledge graph connecting symptoms, syndromes, treatments, formulas, herbs, and classical texts.</desc>
+  <defs>
+    <pattern id="paper" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M0 5h28M0 19h28" stroke="#d9d0bf" stroke-width="0.5" opacity="0.22"/>
+      <circle cx="8" cy="12" r="0.7" fill="#a89f8e" opacity="0.18"/>
+      <circle cx="22" cy="24" r="0.6" fill="#a89f8e" opacity="0.14"/>
+    </pattern>
+    <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M34 0H0v34" fill="none" stroke="#92b5ac" stroke-width="0.6" opacity="0.12"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#0b1718" flood-opacity="0.18"/>
+    </filter>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0l8 4-8 4z" fill="#6dd8c0"/>
+    </marker>
+  </defs>
+
+  <rect width="1440" height="480" fill="#f4efe5"/>
+  <rect width="1440" height="480" fill="url(#paper)"/>
+  <path d="M0 408C220 360 340 462 570 414s390-29 560 7 224 22 310-4v63H0z" fill="#d8e5dc" opacity="0.72"/>
+
+  <g opacity="0.82">
+    <path d="M93 366c62-64 82-151 77-252" fill="none" stroke="#355f4b" stroke-width="4" stroke-linecap="round"/>
+    <path d="M166 178c-43-4-73-25-88-63 43-3 76 18 88 63z" fill="#648b6b"/>
+    <path d="M157 229c-48 6-81-8-105-42 43-14 83 1 105 42z" fill="#88a879"/>
+    <path d="M166 278c-39 18-75 17-108-4 31-27 73-25 108 4z" fill="#50785c"/>
+    <path d="M171 141c39-12 67-35 83-70-42-1-72 24-83 70z" fill="#789b72"/>
+    <path d="M168 201c43-6 76-25 98-58-42-9-80 14-98 58z" fill="#446e58"/>
+    <path d="M164 252c43 1 77-14 103-43-38-16-78 1-103 43z" fill="#86a16d"/>
+  </g>
+
+  <g transform="translate(52 324) rotate(-5)">
+    <rect x="0" y="0" width="220" height="94" rx="6" fill="#f8f4eb" stroke="#9d8061" stroke-width="2"/>
+    <path d="M110 9v76" stroke="#b89c78" stroke-width="2"/>
+    <path d="M18 24h72M18 39h62M18 54h69M18 69h52M130 24h72M130 39h57M130 54h67M130 69h48" stroke="#554b40" stroke-width="3" stroke-linecap="round" opacity="0.56"/>
+    <path d="M4 6c37 7 70 6 106 3M216 6c-37 7-70 6-106 3" fill="none" stroke="#b89c78" stroke-width="2"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="286" y="38" width="1098" height="382" rx="8" fill="#061012"/>
+    <rect x="286" y="38" width="1098" height="382" rx="8" fill="url(#grid)"/>
+    <rect x="310" y="62" width="244" height="334" rx="6" fill="#0b181a" stroke="#29433f"/>
+    <rect x="1118" y="62" width="242" height="334" rx="6" fill="#0b181a" stroke="#29433f"/>
+  </g>
+
+  <g font-family="Inter, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif" letter-spacing="0">
+    <circle cx="334" cy="91" r="5" fill="#e45c47"/>
+    <text x="349" y="96" font-size="15" font-weight="700" fill="#effaf5">TCM Knowledge Graph</text>
+    <text x="334" y="121" font-size="11" fill="#82a098">GraphRAG reasoning workbench</text>
+
+    <rect x="330" y="149" width="204" height="52" rx="6" fill="#102427" stroke="#36524e"/>
+    <text x="346" y="171" font-size="11" fill="#83a39a">CURRENT QUESTION</text>
+    <text x="346" y="190" font-size="14" font-weight="700" fill="#f7fffb">失眠可以从哪些证候分析？</text>
+
+    <text x="334" y="235" font-size="11" fill="#83a39a">REASONING PATH</text>
+    <rect x="330" y="250" width="204" height="116" rx="6" fill="#0d1f21" stroke="#263e3b"/>
+    <circle cx="350" cy="275" r="5" fill="#e45c47"/>
+    <text x="366" y="280" font-size="12" fill="#dcebe5">症状识别</text>
+    <path d="M350 284v14" stroke="#40615b"/>
+    <circle cx="350" cy="307" r="5" fill="#d7a343"/>
+    <text x="366" y="312" font-size="12" fill="#dcebe5">证候研判</text>
+    <path d="M350 316v14" stroke="#40615b"/>
+    <circle cx="350" cy="339" r="5" fill="#54c4ab"/>
+    <text x="366" y="344" font-size="12" fill="#dcebe5">治法方药与证据</text>
+
+    <text x="1142" y="94" font-size="11" fill="#83a39a">EVIDENCE</text>
+    <rect x="1142" y="111" width="194" height="78" rx="6" fill="#102427" stroke="#36524e"/>
+    <rect x="1155" y="126" width="44" height="20" rx="4" fill="#493c20"/>
+    <text x="1165" y="140" font-size="10" fill="#f3cf77">典籍</text>
+    <text x="1155" y="164" font-size="13" font-weight="700" fill="#f7fffb">《金匮要略》</text>
+    <text x="1155" y="180" font-size="10" fill="#89a69e">虚劳虚烦不得眠</text>
+
+    <rect x="1142" y="202" width="194" height="78" rx="6" fill="#102427" stroke="#36524e"/>
+    <rect x="1155" y="217" width="54" height="20" rx="4" fill="#183e37"/>
+    <text x="1165" y="231" font-size="10" fill="#7de2ca">本地资料</text>
+    <text x="1155" y="255" font-size="13" font-weight="700" fill="#f7fffb">中医证候知识库</text>
+    <text x="1155" y="271" font-size="10" fill="#89a69e">实体、关系与原文切片</text>
+
+    <text x="1142" y="318" font-size="11" fill="#83a39a">SERVICES</text>
+    <circle cx="1148" cy="344" r="4" fill="#54c4ab"/><text x="1160" y="348" font-size="11" fill="#cfe0da">Graph ready</text>
+    <circle cx="1240" cy="344" r="4" fill="#54c4ab"/><text x="1252" y="348" font-size="11" fill="#cfe0da">RAG ready</text>
+    <circle cx="1148" cy="371" r="4" fill="#54c4ab"/><text x="1160" y="375" font-size="11" fill="#cfe0da">Sources ready</text>
+  </g>
+
+  <g stroke-linecap="round">
+    <path d="M674 196C625 169 606 139 588 118" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M674 196C624 218 612 255 590 282" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M721 191C765 146 807 129 844 119" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M725 207C782 222 812 245 850 271" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M873 119C931 142 956 177 977 207" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M875 272C933 264 958 244 980 218" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M1005 220C1045 223 1070 246 1093 274" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M694 222C701 281 745 319 802 336" fill="none" stroke="#5a8278" stroke-width="2" marker-end="url(#arrow)"/>
+  </g>
+
+  <g font-family="Inter, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif" text-anchor="middle" letter-spacing="0">
+    <g filter="url(#glow)"><circle cx="699" cy="204" r="35" fill="#8f2f28" stroke="#ff7664" stroke-width="2"/></g>
+    <text x="699" y="200" font-size="11" fill="#ffc4ba">症状</text><text x="699" y="218" font-size="14" font-weight="700" fill="#ffffff">失眠</text>
+    <circle cx="570" cy="99" r="28" fill="#7b5a1f" stroke="#e5b757" stroke-width="2"/>
+    <text x="570" y="96" font-size="10" fill="#f4d88f">证候</text><text x="570" y="112" font-size="12" font-weight="700" fill="#fffaf0">心神失养</text>
+    <circle cx="566" cy="303" r="28" fill="#7b5a1f" stroke="#e5b757" stroke-width="2"/>
+    <text x="566" y="300" font-size="10" fill="#f4d88f">证候</text><text x="566" y="316" font-size="12" font-weight="700" fill="#fffaf0">肝郁化火</text>
+    <circle cx="864" cy="111" r="29" fill="#124d49" stroke="#58d6bf" stroke-width="2"/>
+    <text x="864" y="108" font-size="10" fill="#9ae8d9">治法</text><text x="864" y="124" font-size="12" font-weight="700" fill="#effffb">养血安神</text>
+    <circle cx="868" cy="285" r="31" fill="#20343a" stroke="#829fa5" stroke-width="2"/>
+    <text x="868" y="282" font-size="10" fill="#adc6cc">方剂</text><text x="868" y="299" font-size="12" font-weight="700" fill="#f3fbfd">酸枣仁汤</text>
+    <circle cx="995" cy="216" r="30" fill="#2e5838" stroke="#75c487" stroke-width="2"/>
+    <text x="995" y="213" font-size="10" fill="#a9deb4">本草</text><text x="995" y="230" font-size="12" font-weight="700" fill="#f3fff5">酸枣仁</text>
+    <circle cx="1100" cy="290" r="28" fill="#59441f" stroke="#d5aa55" stroke-width="2"/>
+    <text x="1100" y="287" font-size="10" fill="#ebce91">典籍</text><text x="1100" y="304" font-size="12" font-weight="700" fill="#fffaf0">金匮要略</text>
+    <circle cx="819" cy="346" r="24" fill="#253c53" stroke="#6a9aca" stroke-width="2"/>
+    <text x="819" y="350" font-size="11" font-weight="700" fill="#eaf5ff">证据</text>
+  </g>
+
+  <g fill="#8bb7ac" opacity="0.62">
+    <circle cx="629" cy="145" r="3"/><circle cx="762" cy="157" r="3"/><circle cx="776" cy="254" r="3"/><circle cx="935" cy="170" r="3"/><circle cx="950" cy="277" r="3"/>
+  </g>
+</svg>
