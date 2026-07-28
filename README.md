@@ -1,26 +1,30 @@
 <div align="center">
-  <img src="docs/assets/readme-hero.svg" alt="TCM Knowledge Graph Platform" width="100%" />
+  <img src="docs/assets/readme-hero.svg" alt="中医知识图谱与 GraphRAG 智能问答平台 - Traditional Chinese Medicine Knowledge Graph Platform" width="100%" />
 
   <h1>TCM Knowledge Graph Platform</h1>
 
-  <p><strong>中医知识图谱与 GraphRAG 智能问答平台</strong></p>
-  <p>把症状、证候、治法、方剂、中药与典籍证据，组织成可检索、可探索、可追溯的知识网络。</p>
+  <p><strong>中医知识图谱 · Traditional Chinese Medicine Knowledge Graph · GraphRAG</strong></p>
+  <p>面向中医药文献、症状证候、治法方药与典籍证据的可视化知识工程平台。</p>
+  <p><em>An end-to-end TCM knowledge graph and GraphRAG platform for traceable question answering, hybrid retrieval, document ingestion, entity-relation extraction, and 3D graph exploration.</em></p>
 
   <p>
     <img src="https://img.shields.io/badge/React-18-20232a?style=flat-square&logo=react&logoColor=61dafb" alt="React 18" />
     <img src="https://img.shields.io/badge/FastAPI-Python%203.11-0b8f70?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
     <img src="https://img.shields.io/badge/Neo4j-5-4581c3?style=flat-square&logo=neo4j&logoColor=white" alt="Neo4j 5" />
+    <img src="https://img.shields.io/badge/Qdrant-Vector%20Search-dc244c?style=flat-square&logo=qdrant&logoColor=white" alt="Qdrant Vector Search" />
     <img src="https://img.shields.io/badge/GraphRAG-RAGFlow--compatible-b34235?style=flat-square" alt="GraphRAG" />
+    <img src="https://img.shields.io/badge/LLM-OpenAI--compatible-412991?style=flat-square&logo=openai&logoColor=white" alt="OpenAI-compatible LLM" />
     <img src="https://img.shields.io/badge/Docker-Compose-2496ed?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose" />
   </p>
 
   <p>
-    <a href="#about">About</a> ·
+    <a href="#about">项目介绍</a> ·
+    <a href="#why">为什么选择</a> ·
+    <a href="#use-cases">应用场景</a> ·
     <a href="#features">核心能力</a> ·
     <a href="#architecture">系统架构</a> ·
     <a href="#quick-start">快速开始</a> ·
-    <a href="#ingestion">知识入库</a> ·
-    <a href="#development">开发指南</a>
+    <a href="#faq">FAQ</a>
   </p>
 </div>
 
@@ -28,9 +32,13 @@
 
 <a id="about"></a>
 
-## About
+## 项目介绍 / Project Overview
 
-TCM Knowledge Graph Platform 是一个面向中医知识组织、检索与可视化推理的全栈平台。它不是一个只返回文字的通用聊天界面，而是以知识图谱为主视觉，将每一个结论尽可能还原为：
+**TCM Knowledge Graph Platform** 是一个端到端的中医知识图谱（Traditional Chinese Medicine Knowledge Graph）与 GraphRAG 智能问答平台。项目使用 **Neo4j、Qdrant、PostgreSQL、MinIO、FastAPI 和 React**，将分散在 PDF、Word、结构化数据和中医典籍中的症状、证候、治法、方剂、中药、功效与出处组织为可检索、可探索、可追溯的知识网络。
+
+Unlike a generic TCM chatbot or vector-only RAG demo, this project combines a medical knowledge graph, RAGFlow-compatible hybrid retrieval, evidence-grounded generation, resumable GraphRAG indexing, and an interactive 3D graph workbench.
+
+它不是一个只返回文字的通用聊天界面，而是将一次中医问答还原为一条可解释的知识路径：
 
 ```text
 问题 -> 实体识别 -> 图谱路径 -> 混合检索 -> 证据溯源 -> 答案生成
@@ -43,6 +51,39 @@ TCM Knowledge Graph Platform 是一个面向中医知识组织、检索与可视
 
 > [!NOTE]
 > 项目定位为中医知识工程、检索研究与产品演示平台，不替代专业医疗诊断或治疗建议。
+
+> [!TIP]
+> 如果你正在研究中医知识图谱、中医大模型、医疗 GraphRAG 或可追溯 RAG，可以 Star 本仓库以便持续关注后续构建。
+
+<a id="why"></a>
+
+## 为什么选择这个项目
+
+中医知识天然具有多层次、多跳关系和强证据依赖：同一症状可能关联多个证候，同一方剂又会关联组成、功效、主治、剂量与典籍来源。只使用向量相似度很难稳定表达这些结构。
+
+| 对比项 | 普通向量 RAG | TCM Knowledge Graph Platform |
+| --- | --- | --- |
+| 知识组织 | 文本切片与向量相似度 | 症状、证候、治法、方剂、中药、典籍关系图 |
+| 检索方式 | 以向量召回为主 | 全文 + 向量 + 图谱 + 重排 + 社区摘要 |
+| 回答展示 | 文字答案与参考片段 | 答案 + 3D 图谱 + 高亮路径 + 证据卡片 |
+| 知识构建 | 文档分块后一次性索引 | 结构化切片、实体关系抽取、subgraph checkpoint 与全局图合并 |
+| 可解释性 | 依赖模型文本解释 | 结论可回溯到图谱关系、文档切片和原始来源 |
+| 无模型演示 | 通常不可用 | 保留本地稳定演示路径 |
+
+这使它同时适合作为 **中医知识库、医疗知识图谱、GraphRAG 研究原型、中医智能问答平台** 与可视化产品演示基座。
+
+<a id="use-cases"></a>
+
+## 应用场景
+
+| 场景 | 可以做什么 |
+| --- | --- |
+| 中医文献数字化 | 将古籍、现代文献、方剂表格和本草资料转换为统一知识产物。 |
+| 中医知识图谱建设 | 构建症状、证候、治法、方剂、中药、功效、归经和典籍关系。 |
+| 方剂与中药研究 | 探索方剂组成、药味配伍、功效主治、相关证候与文献出处。 |
+| 证据型中医问答 | 让 LLM 答案携带图谱推理路径、来源片段与典籍证据。 |
+| GraphRAG 与 RAG 研究 | 评估图检索、混合检索、实体消歧、社区摘要和证据组织。 |
+| 医疗 AI 产品演示 | 以图谱为视觉中心，展示不同于通用聊天机器人的知识工作台。 |
 
 <a id="features"></a>
 
@@ -58,6 +99,24 @@ TCM Knowledge Graph Platform 是一个面向中医知识组织、检索与可视
 | 可恢复图谱构建 | 按数据源保存 subgraph checkpoint，支持全局图合并、阶段标记和异步构建任务。 |
 | 模型接入可替换 | 通过 OpenAI-compatible API 分别配置 LLM、Embedding、Rerank 和 OCR 模型。 |
 | 本地稳定演示 | 未配置外部模型时使用内置演示路径，便于快速启动与展示。 |
+
+## 知识图谱数据模型
+
+当前图谱面向中医辨证、方剂和本草知识组织，核心实体包括：
+
+| 知识类型 | 典型实体 | 典型关系 |
+| --- | --- | --- |
+| 辨证知识 | 症状 `Symptom`、证候 `Syndrome` | 可见于、辨证为、伴随 |
+| 治疗知识 | 治法 `Treatment`、功效 `Function` | 治以、具有功效 |
+| 方剂知识 | 方剂 `Formula`、组成 `Prescription`、剂量 `Dosage` | 方剂、组成、剂量、主治 |
+| 本草知识 | 中药 `Herb`、归经 `Channel`、主治 `Indication` | 归经、配伍、相关方剂 |
+| 证据知识 | 典籍、文档、原文切片 `Evidence` | 出典、引用、支持关系 |
+
+典型推理路径：
+
+```text
+症状 -> 证候 -> 治法 -> 方剂 -> 中药 -> 功效 / 归经 -> 典籍与文献证据
+```
 
 <a id="architecture"></a>
 
@@ -232,6 +291,41 @@ python scripts/import_seed_graph.py
 | `POST` | `/api/ingestion/publish` | 发布验证后的知识产物 |
 
 API 启动后可访问 <http://localhost:8000/docs> 查看完整 OpenAPI 文档。
+
+<a id="faq"></a>
+
+## FAQ
+
+### 这是一个中医聊天机器人吗？
+
+不只是。项目的主体是中医知识图谱工作台和 GraphRAG 数据管线。问答只是入口，结果会同时展示关联实体、推理路径和可追溯证据。
+
+### 项目与 RAGFlow 是什么关系？
+
+项目实现了 **RAGFlow-compatible retrieval** 和 RAGFlow-style GraphRAG 构建语义，包括查询改写、全文/向量融合、KG 检索、子图 checkpoint、全局图合并与阶段标记；它不是对完整 RAGFlow 服务的直接复制或必需部署。
+
+### 必须使用 OpenAI 吗？
+
+不必。只要供应商提供 OpenAI-compatible API，就可以配置 LLM、Embedding、Rerank 和 OCR 模型。没有配置外部模型时，系统仍可使用内置演示数据。
+
+### 支持哪些中医资料？
+
+当前支持 PDF、DOCX、Markdown、TXT、CSV、JSON 和图片类来源。扫描图片可调用 OCR，文本内容会进入结构化切片、实体关系抽取、图谱发布和向量索引流程。
+
+### 为什么中医问答需要知识图谱？
+
+中医知识常以症状、证候、治法、方剂、药味和典籍出处组成多跳网络。知识图谱可以保留关系方向与路径，帮助检索系统组织比单个相似文本片段更稳定的上下文。
+
+### 可以直接用于医疗诊断吗？
+
+不可以。当前项目用于知识工程、技术研究、资料检索和产品演示，不构成医疗诊断或治疗建议。
+
+## 相关主题与技术关键词
+
+- **中文主题**：中医知识图谱、中医药知识库、中医大模型、中医智能问答、医疗知识图谱、方剂知识图谱、本草知识库、中医文献数字化。
+- **English topics**: Traditional Chinese Medicine, TCM knowledge graph, Chinese medicine AI, medical knowledge graph, GraphRAG, retrieval-augmented generation, evidence-grounded question answering.
+- **AI 与检索**：RAGFlow-compatible retrieval、hybrid search、vector search、entity resolution、community summary、document ingestion、OCR、LLM、Embedding、Rerank。
+- **技术栈**：Neo4j、Qdrant、PostgreSQL、MinIO、FastAPI、React、TypeScript、Three.js、Docker Compose。
 
 ## Roadmap
 
