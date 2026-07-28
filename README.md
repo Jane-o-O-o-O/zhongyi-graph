@@ -15,6 +15,7 @@
     <img src="https://img.shields.io/badge/GraphRAG-RAGFlow--compatible-b34235?style=flat-square" alt="GraphRAG" />
     <img src="https://img.shields.io/badge/LLM-OpenAI--compatible-412991?style=flat-square&logo=openai&logoColor=white" alt="OpenAI-compatible LLM" />
     <img src="https://img.shields.io/badge/Docker-Compose-2496ed?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose" />
+    <img src="https://img.shields.io/badge/License-MIT-2f7663?style=flat-square" alt="MIT License" />
   </p>
 
   <p>
@@ -341,6 +342,10 @@ API 启动后可访问 <http://localhost:8000/docs> 查看完整 OpenAPI 文档�
 ## 贡献
 
 建议在提交修改前先运行 `make test`。新增图谱实体或关系时，请同步提供来源、证据切片与对应测试，保持知识链路可追溯。
+
+## 开源许可
+
+本项目基于 [MIT License](LICENSE) 开源。你可以在保留原始版权声明和许可声明的前提下使用、复制、修改、合并、发布和分发本软件。
 
 ---
 
