@@ -1,5 +1,5 @@
 import { ConfigProvider, InputNumber } from 'antd';
-import { BookOpen, CheckCircle2, Sparkles } from 'lucide-react';
+import { BookOpen, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadGraphOverview, submitQuestion } from './api/client';
 import type { GraphOverview, QueryResult } from './api/types';
@@ -304,6 +304,16 @@ export default function App() {
   return (
     <ConfigProvider theme={theme}>
       <main className="app-shell">
+        <div className="project-watermark" aria-label="项目归属">
+          <span>
+            <strong>Jane-zz</strong> 个人项目
+          </span>
+          <a href="https://jane-zz.me" target="_blank" rel="noreferrer">
+            访问主页
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        </div>
+
         <GraphCanvas
           nodes={displayedGraph.graphNodes}
           edges={displayedGraph.graphEdges}

@@ -136,6 +136,12 @@ describe('App', () => {
     const { container } = render(<App />);
 
     expect(screen.getByText('中医知识图谱智能平台')).toBeInTheDocument();
+    expect(screen.getByText(/Jane-zz/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '访问主页' })).toHaveAttribute(
+      'href',
+      'https://jane-zz.me',
+    );
+    expect(screen.getByRole('link', { name: '访问主页' })).toHaveAttribute('target', '_blank');
     expect(screen.getByPlaceholderText('请输入中医问题，例如：失眠可以从哪些证候分析？')).toBeInTheDocument();
     expect(screen.getByText('知识图谱')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /解读/ })).toHaveAttribute('aria-expanded', 'false');

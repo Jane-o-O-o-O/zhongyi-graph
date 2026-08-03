@@ -31,11 +31,60 @@ textarea {
   position: relative;
   z-index: 1;
   height: 100vh;
-  padding: 18px 22px 22px;
+  padding: 50px 22px 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   overflow: hidden;
+}
+
+.project-watermark {
+  position: fixed;
+  top: 16px;
+  left: 24px;
+  z-index: 5;
+  max-width: calc(100vw - 48px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(215, 241, 232, 0.58);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: auto;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.72);
+}
+
+.project-watermark span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-watermark strong {
+  color: rgba(246, 255, 249, 0.86);
+  font-weight: 700;
+}
+
+.project-watermark a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: #68f7d7;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  transition: color 160ms ease;
+}
+
+.project-watermark a:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.project-watermark a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid rgba(104, 247, 215, 0.72);
+  outline-offset: 3px;
 }
 
 .glass-overlay {
@@ -492,7 +541,7 @@ textarea {
 .insight-toggle {
   position: fixed;
   right: 24px;
-  top: 112px;
+  top: 144px;
   z-index: 4;
   min-height: 44px;
   display: inline-flex;
@@ -517,7 +566,7 @@ textarea {
 
 .insight-drawer {
   position: fixed;
-  top: 166px;
+  top: 198px;
   right: 24px;
   bottom: 92px;
   z-index: 4;
@@ -538,8 +587,15 @@ textarea {
   }
 
   .app-shell {
-    padding: 10px;
+    padding: 44px 10px 10px;
     gap: 10px;
+  }
+
+  .project-watermark {
+    top: 11px;
+    left: 12px;
+    max-width: calc(100vw - 24px);
+    gap: 8px;
   }
 
   .topbar {
